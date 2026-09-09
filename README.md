@@ -16,11 +16,17 @@ record and a signature. lol.
 
 ### [SPEC](/SPEC.md)
 
-### [The site](https://goldennftplatform-svg.github.io/midsig/)
+### [The site](https://midsig.aisp.live)
+
+### [Verify a message live](https://midsig.aisp.live/verify.html)
 
 ### [Postage demo](/docs) — mint a stamp in your browser
 
-### [Unchaining your inbox](/posts/unchaining-your-inbox) — coming soon
+### [Unchaining your inbox](/posts/unchaining-your-inbox)
+
+### [POSTFIX](/POSTFIX.md) — milter deployment
+
+### [GUIDE-RSPAMD](/GUIDE-RSPAMD.md) — enforce in 10 minutes
 
 ## Quick start
 
@@ -29,14 +35,27 @@ python -m midsig.cli keygen --domain example.com      # key + DNS record
 python -m midsig.cli sign --key-file key.hex \
     --input in.eml --output out.eml --postage-bits 20
 python -m midsig.cli verify --input out.eml --required-bits 20
+python -m midsig.cli send --key-file key.hex --smtp relay.example.com \
+    --user you --password secret --from you@example.com --to bob@x.org
 ```
 
 Zero dependencies. Pure Python. Ed25519 verified against RFC 8032 vectors.
 
+## What's in the box
+
+| Piece | What it is |
+|---|---|
+| `midsig` | reference library + CLI (sign / verify / send) |
+| `midsigd` | milter daemon — hard enforcement on Postfix/Sendmail |
+| `rspamd/lua/midsig.lua` | Lua module — enforcement on any rspamd host |
+| `docs/` | site: live verifier (client-side DoH), postage demo |
+
 ## Tests
 
-```
-python -m unittest discover -s tests -v    # 14/14
+```bash
+python -m unittest discover -s tests -v        # 23 python tests
+cd tests && npm install && npm run test:lua    # Lua module runtime tests
+npm run test:syntax                            # luaparse syntax check
 ```
 
 ## Honest lineage
