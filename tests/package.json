@@ -1,0 +1,13 @@
+{
+  "name": "midsig-tests",
+  "private": true,
+  "description": "Test harness for the rspamd Lua module (fengari interpreter + luaparse syntax check)",
+  "scripts": {
+    "test:lua": "node run-lua-tests.js",
+    "test:syntax": "node lua-syntax-check.js ../rspamd/lua/midsig.lua"
+  },
+  "devDependencies": {
+    "fengari": "^0.1.4",
+    "luaparse": "^0.3.1"
+  }
+}
