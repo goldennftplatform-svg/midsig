@@ -16,7 +16,14 @@ DEFAULT_SERVER = os.environ.get("MIDSIG_DNS_SERVER", "8.8.8.8")
 
 def query_txt(name, server=DEFAULT_SERVER, port=53, timeout=3):
     try:
-        return _udp_query(name, server, port, timeout)
+        records = _udp_query(name, server, port, timeout)
+        if records:
+            return records
+        # empty answer set is ambiguous: NODATA vs the configured resolver not
+        # having propagated yet — confirm with the system resolver
+        if os.name == "nt":
+            return _nslookup(name)
+        return []
     except Exception:
         if os.name == "nt":
             return _nslookup(name)
