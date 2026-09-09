@@ -6,3 +6,5 @@ key.hex
 keygen.out
 .venv/
 venv/
+tests/node_modules/
+tests/package-lock.json
