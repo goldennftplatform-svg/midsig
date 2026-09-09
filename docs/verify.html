@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Verify — MIDSIG</title>
+<style>
+  :root {
+    --bg: #0b0e14; --panel: #131826; --panel2: #1a2132; --ink: #e8ecf5;
+    --dim: #9aa4bd; --accent: #4fd1a5; --danger: #ff6b6b; --line: #232c42;
+    --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--ink); font: 16px/1.65 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 22px; }
+  header { padding: 70px 0 30px; }
+  .logo { font-family: var(--mono); color: var(--accent); font-size: 14px; letter-spacing: .3em; }
+  h1 { font-size: 34px; margin: 16px 0 6px; }
+  .sub { color: var(--dim); }
+  .back { font-family: var(--mono); font-size: 13px; color: var(--dim); text-decoration: none; display: inline-block; margin-bottom: 10px; }
+  textarea {
+    width: 100%; min-height: 260px; margin-top: 22px;
+    background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px; font-family: var(--mono); font-size: 13px; resize: vertical;
+  }
+  .row { display: flex; gap: 14px; align-items: center; margin-top: 16px; flex-wrap: wrap; }
+  button {
+    background: var(--accent); color: #05271d; border: none; cursor: pointer;
+    padding: 12px 26px; border-radius: 9px; font-weight: 700; font-size: 15px;
+  }
+  button:hover { filter: brightness(1.1); }
+  .hint { color: var(--dim); font-size: 13px; }
+  .result { margin-top: 26px; display: none; }
+  .result.show { display: block; }
+  .verdict {
+    font-family: var(--mono); font-size: 22px; padding: 18px 22px;
+    border-radius: 12px; border: 1px solid var(--line);
+  }
+  .verdict.pass { color: var(--accent); border-color: var(--accent); background: rgba(79,209,165,.06); }
+  .verdict.fail { color: var(--danger); border-color: var(--danger); background: rgba(255,107,107,.06); }
+  .steps { margin-top: 16px; font-family: var(--mono); font-size: 13px; color: var(--dim); }
+  .steps div { padding: 5px 0; border-bottom: 1px dashed var(--line); }
+  .steps b { color: var(--ink); }
+  .sample { font-family: var(--mono); font-size: 12px; color: var(--dim); cursor: pointer; text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="back" href="/">← midsig</a>
+    <div class="logo">MIDSIG VERIFIER</div>
+    <h1>Check any message against live DNS.</h1>
+    <p class="sub">
+      Paste a raw .eml (headers at minimum). Verification runs entirely in your
+      browser: DNS lookup over HTTPS, Ed25519 check in JavaScript. Nothing is uploaded.
+    </p>
+  </header>
+
+  <textarea id="eml" spellcheck="false" placeholder='From: Alice <alice@example.com>
+To: Bob <bob@receiver.org>
+Subject: hello
+Message-ID: <abc@example.com>
+X-Midsig: v=1; d=example.com; i=<abc@example.com>; t=1720600000; s=...'></textarea>
+
+  <div class="row">
+    <button id="verify">Verify message</button>
+    <label class="hint">require postage: <input type="number" id="bits" value="0" min="0" max="64" style="width:70px;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px"> bits</label>
+    <span class="sample" id="sample">try a sample</span>
+  </div>
+
+  <div class="result" id="result">
+    <div class="verdict" id="verdict"></div>
+    <div class="steps" id="steps"></div>
+  </div>
+</div>
+
+<script type="module">
+import { verify } from "js/ed25519.js";
+
+const $ = (id) => document.getElementById(id);
+const utf8 = (s) => new TextEncoder().encode(s);
+const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+function parseHeaders(eml) {
+  const head = eml.split(/\r?\n\r?\n/)[0].replace(/\r\n/g, "\n");
+  const lines = [];
+  for (const raw of head.split("\n")) {
+    if (/^[ \t]/.test(raw) && lines.length) lines[lines.length - 1] += " " + raw.trim();
+    else lines.push(raw);
+  }
+  const map = {};
+  for (const line of lines) {
+    const i = line.indexOf(":");
+    if (i < 0) continue;
+    const name = line.slice(0, i).trim().toLowerCase();
+    const value = line.slice(i + 1).trim();
+    (map[name] = map[name] || []).push(value);
+  }
+  return map;
+}
+
+function fromDomain(map) {
+  if (!map.from) return null;
+  const from = map.from[0];
+  const angle = from.match(/<([^>]+)>/);
+  const addr = angle ? angle[1] : from.trim().replace(/^"|"$/g, "");
+  const at = addr.lastIndexOf("@");
+  return at < 0 ? null : addr.slice(at + 1).toLowerCase();
+}
+
+function parseFields(value) {
+  const fields = {};
+  for (const part of value.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq < 0) continue;
+    fields[part.slice(0, eq).trim().toLowerCase()] = part.slice(eq + 1).trim();
+  }
+  return fields;
+}
+
+async function fetchTxt(domain) {
+  for (const base of ["https://dns.google/resolve", "https://cloudflare-dns.com/dns-query"]) {
+    try {
+      const resp = await fetch(`${base}?name=_midsig.${domain}&type=TXT`);
+      const json = await resp.json();
+      if (json.Status === 3) return [];
+      const data = (json.Answer || []).map((a) => a.data).join(" ");
+      return data.split(/"(?: )?"/).filter((s) => s.includes("="));
+    } catch (e) { /* try next */ }
+  }
+  return null;
+}
+
+function leadingZerosHex(hex) {
+  let zeros = 0;
+  for (const ch of hex) {
+    if (ch === "0") { zeros += 4; continue; }
+    zeros += 4 - Math.max(1, Math.floor(Math.log2(parseInt(ch, 16))) + 1);
+    break;
+  }
+  return zeros;
+}
+
+async function sha256Hex(u8) {
+  const buf = await crypto.subtle.digest("SHA-256", u8);
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+$("verify").addEventListener("click", run);
+$("sample").addEventListener("click", async () => {
+  try {
+    const resp = await fetch("sample-signed.eml");
+    $("eml").value = await resp.text();
+  } catch (e) {
+    $("eml").value = "sample not available";
+  }
+});
+
+async function run() {
+  const steps = [];
+  const add = (label, detail) => steps.push(`<div><b>${label}</b> — ${detail}</div>`);
+  const eml = $("eml").value;
+  const requiredBits = parseInt($("bits").value || "0", 10);
+  $("result").classList.add("show");
+
+  const map = parseHeaders(eml);
+  const domain = fromDomain(map);
+  if (!domain) return finish(false, "no parseable From header", steps);
+
+  const midsig = map["x-midsig"] && map["x-midsig"][0];
+  if (!midsig) {
+    add("headers", "no X-Midsig header found");
+    return finish(false, "fail — missing X-Midsig", steps);
+  }
+  const f = parseFields(midsig);
+  add("header", `d=${f.d}, i=${f.i}, t=${f.t}`);
+
+  if ((f.d || "").toLowerCase() !== domain) {
+    add("domain", `X-Midsig d=${f.d} ≠ From domain ${domain}`);
+    return finish(false, "fail — domain mismatch", steps);
+  }
+
+  const records = await fetchTxt(domain);
+  if (records === null) {
+    add("dns", "DoH lookup failed");
+    return finish(false, "error — could not reach DNS", steps);
+  }
+  if (!records.length) {
+    add("dns", `no _midsig TXT record for ${domain}`);
+    return finish(false, "fail — domain publishes no key", steps);
+  }
+  const pubB64 = (records.join(";").match(/p=([A-Za-z0-9+/=]+)/) || [])[1];
+  if (!pubB64) return finish(false, "fail — no ed25519 key in TXT record", steps);
+  add("dns", `key found for ${domain}`);
+
+  const payload = utf8(`midsig1:${domain}\n${f.i}\n${f.t}`);
+  const sig = b64(f.s);
+  const ok = await verify(b64(pubB64), payload, sig);
+  add("signature", ok ? "ed25519 valid" : "ed25519 INVALID");
+  if (!ok) return finish(false, "fail — signature verification failed", steps);
+
+  if (requiredBits > 0 || map["x-midsig-postage"]) {
+    const p = map["x-midsig-postage"] && parseFields(map["x-midsig-postage"][0]);
+    if (!p) return finish(false, "fail — postage required but missing", steps);
+    const challenge = utf8(`mailstamp1:${domain}\n${f.i}\n${f.t}\n${p.n}`);
+    const hash = await sha256Hex(challenge);
+    const zeros = leadingZerosHex(hash);
+    add("postage", `${zeros} leading zero bits (need ${requiredBits})`);
+    if (hash !== (p.x || "").toLowerCase()) return finish(false, "fail — postage token invalid", steps);
+    if (zeros < requiredBits) return finish(false, "fail — postage too weak", steps);
+  }
+
+  finish(true, `pass — ${domain} signed this message`, steps);
+}
+
+function finish(ok, text, steps) {
+  const v = $("verdict");
+  v.textContent = `verdict: ${text}`;
+  v.className = "verdict " + (ok ? "pass" : "fail");
+  $("steps").innerHTML = steps.join("");
+}
+</script>
+</body>
+</html>

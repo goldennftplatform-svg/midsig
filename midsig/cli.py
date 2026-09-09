@@ -98,8 +98,71 @@ def main(argv=None):
     p.add_argument("--config", required=True, help="path to midsigd.conf")
     p.set_defaults(func=cmd_daemon)
 
+    p = sub.add_parser("send", help="sign a message and send it through an SMTP relay")
+    p.add_argument("--key-file", required=True)
+    p.add_argument("--smtp", required=True, help="relay hostname")
+    p.add_argument("--port", type=int, default=465)
+    p.add_argument("--user", required=True)
+    p.add_argument("--password", required=True)
+    p.add_argument("--from", dest="sender", required=True)
+    p.add_argument("--to", action="append", required=True)
+    p.add_argument("--subject", default="")
+    p.add_argument("--body", default="")
+    p.add_argument("--body-file")
+    p.add_argument("--postage-bits", type=int, default=0)
+    p.add_argument("--starttls", action="store_true", help="use STARTTLS on port 587 instead of implicit TLS")
+    p.set_defaults(func=cmd_send)
+
     args = parser.parse_args(argv)
     args.func(args)
+
+
+def cmd_send(args):
+    import smtplib
+    import time
+    import uuid
+    from email.message import EmailMessage
+
+    seed = _load_seed(args.key_file)
+    domain = args.sender.rsplit("@", 1)[1].lower()
+    message_id = f"<{uuid.uuid4().hex}@{domain}>"
+    timestamp = int(time.time())
+
+    body = args.body
+    if args.body_file:
+        with open(args.body_file, "r", encoding="utf-8", newline="") as fh:
+            body = fh.read()
+
+    eml = (
+        f"From: {args.sender}\r\n"
+        f"To: {', '.join(args.to)}\r\n"
+        f"Subject: {args.subject}\r\n"
+        f"Message-ID: {message_id}\r\n"
+        "\r\n"
+        f"{body}\r\n"
+    )
+    signed = core.sign_eml(seed, eml, postage_bits=args.postage_bits)
+
+    msg = EmailMessage()
+    raw_headers, payload_body = core._split(signed)
+    hmap, order = core._header_map(raw_headers)
+    seen = set()
+    for name, value in order:
+        if name in seen:
+            continue
+        seen.add(name)
+        msg[name] = value
+    msg.set_payload(payload_body)
+
+    if args.starttls:
+        client = smtplib.SMTP(args.smtp, args.port, timeout=30)
+        client.starttls()
+    else:
+        client = smtplib.SMTP_SSL(args.smtp, args.port, timeout=30)
+    client.login(args.user, args.password)
+    client.send_message(msg)
+    client.quit()
+    print(f"sent signed message {message_id} to {', '.join(args.to)}")
 
 
 def cmd_daemon(args):
