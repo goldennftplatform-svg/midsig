@@ -1,63 +1,49 @@
 # midsig
 
-Domain-signed Message-IDs for email. Zero-dependency Python reference
-implementation of the [MIDSIG spec](SPEC.md).
+####
 
-[![Site](https://img.shields.io/badge/site-midsig.live-4fd1a5)](https://goldennftplatform-svg.github.io/midsig/)
-[![Tests](https://img.shields.io/badge/tests-14%2F14%20passing-4fd1a5)]()
-[![Python](https://img.shields.io/badge/python-3.8%2B-blue)]()
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+Email is the internet's oldest open protocol, and the From line still trusts
+anyone. We fixed that.
+
+MIDSIG signs the Message-ID with your domain's key, published in DNS. A forged
+From is now a failed signature, not a guess. Spam gets a price tag: prove 5
+cents of compute or I don't want your mail. ez.
+
+Everything here is MIT. Your keys, your inbox.
+
+The internet spent 30 years building spam filters. MIDSIG spends one TXT
+record and a signature. lol.
+
+### [SPEC](/SPEC.md)
+
+### [The site](https://goldennftplatform-svg.github.io/midsig/)
+
+### [Postage demo](/docs) — mint a stamp in your browser
+
+### [Unchaining your inbox](/posts/unchaining-your-inbox) — coming soon
+
+## Quick start
 
 ```
-midsig/
-├── midsig/
-│   ├── ed25519.py   # pure-Python Ed25519 (RFC 8032)
-│   ├── core.py      # signing, verification, postage
-│   ├── dns.py       # TXT lookup (raw UDP, nslookup fallback)
-│   └── cli.py       # CLI entrypoint
-├── docs/
-│   └── index.html   # live landing page with in-browser postage demo
-├── tests/
-│   ├── test_ed25519.py  # RFC 8032 official vectors
-│   └── test_core.py     # sign/verify/spoof/postage suites
-├── SPEC.md
-└── LICENSE
-```
-
-## Usage
-
-Generate a domain key and get the DNS record:
-
-```bash
-python -m midsig.cli keygen --domain example.com
-# publish the printed TXT record at _midsig.example.com
-python -m midsig.cli publish --domain example.com --key-file key.hex
-```
-
-Sign an .eml (optionally stamp postage):
-
-```bash
-python -m midsig.cli sign --key-file key.hex --input in.eml --output out.eml --postage-bits 20
-```
-
-Verify (does a live TXT lookup):
-
-```bash
+python -m midsig.cli keygen --domain example.com      # key + DNS record
+python -m midsig.cli sign --key-file key.hex \
+    --input in.eml --output out.eml --postage-bits 20
 python -m midsig.cli verify --input out.eml --required-bits 20
 ```
 
+Zero dependencies. Pure Python. Ed25519 verified against RFC 8032 vectors.
+
 ## Tests
 
-```bash
-python -m unittest discover -s tests -v
+```
+python -m unittest discover -s tests -v    # 14/14
 ```
 
-## Production notes
+## Honest lineage
 
-- `ed25519.py` is a non-constant-time reference implementation; for a
-  production MTA plugin, swap it for PyNaCl / `cryptography` (same 32-byte
-  keys, same 64-byte signatures — drop-in).
-- ~1–2 s per pure-Python verify; the OpenSSL-backed swap is microseconds.
-- Integrations worth building next: milter/Postfix plugin, an rspamd module,
-  and a web verifier. The payment-rail postage (Lightning invoice in
-  `X-Midsig-Postage`) plugs into the same `check_postage` seam.
+Hashcash (1997) had the postage idea. DKIM (2007) proved domain signing scales.
+MIDSIG is the slice DKIM leaves unsigned — the message identity itself — plus
+the pricing knob. Crypto was never the hard part; adoption is. This is built
+so one receiving domain can start enforcing today.
+
+NFA on your QTC bags. This repo signs mail, not financial futures.

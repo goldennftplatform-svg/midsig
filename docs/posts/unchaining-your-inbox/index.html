@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Unchaining your inbox — midsig</title>
+<style>
+  :root {
+    --bg: #0b0e14; --ink: #e8ecf5; --dim: #9aa4bd;
+    --accent: #4fd1a5; --line: #232c42;
+  }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 17px/1.75 -apple-system, "Segoe UI", Roboto, sans-serif;
+    max-width: 720px; margin: 0 auto; padding: 80px 24px;
+  }
+  a { color: var(--accent); }
+  .back { font-family: monospace; font-size: 14px; color: var(--dim); text-decoration: none; }
+  h1 { font-size: 40px; line-height: 1.15; margin: 30px 0 20px; }
+  h3 { margin-top: 36px; font-size: 18px; color: var(--accent); }
+  p, li { color: var(--dim); }
+  strong { color: var(--ink); }
+  blockquote {
+    border-left: 2px solid var(--accent); margin: 28px 0; padding: 4px 18px;
+    color: var(--ink); font-size: 20px;
+  }
+  pre {
+    background: #131826; border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px; overflow-x: auto; font-size: 13px; color: #c9d4ee;
+  }
+</style>
+</head>
+<body>
+<a class="back" href="/midsig/">← midsig</a>
+
+<h1>Unchaining your inbox</h1>
+
+<p><em>Why the From line is still free to forge in 2026, and what MIDSIG does about it.</em></p>
+
+<h3>The chain</h3>
+<p>
+Your inbox is the endpoint of a chain nobody asked to be verified. SPF says
+which <strong>servers</strong> may send for a domain. DKIM says which
+<strong>relay</strong> signed the body. Neither says which
+<strong>message</strong> you're looking at actually came from the domain it
+claims. The From line is decoration. The Message-ID is a suggestion.
+</p>
+
+<h3>The unlock</h3>
+<p>
+MIDSIG makes the message identity a cryptographic commitment. One DNS record
+carries your domain's Ed25519 key. Every message you send signs
+<strong>(domain, Message-ID, timestamp)</strong>. Any receiver, anywhere, can
+check it in microseconds — no registry, no CA, no coordination.
+</p>
+
+<h3>The spam part</h3>
+<p>
+Signatures kill spoofing but not spam — spammers can sign too. So the header
+comes with a pricing knob: an optional proof-of-work stamp the receiver prices.
+</p>
+<blockquote>
+"If you don't own the domain and you can't afford 5 cents, I don't want it."
+</blockquote>
+<p>
+Burner domains can still pay; legitimate mail pays nothing it can feel.
+Spam economics breaks at scale because the receiver sets the price.
+</p>
+
+<h3>Adoption without a flag day</h3>
+<pre>$ midsig verify --input mail.eml --required-bits 20
+verdict: pass</pre>
+<p>
+One receiving domain can start enforcing today and get the full protection
+for its own users. Senders add a record and a header. No committee, no
+upgrade window, no waiting on the other 4 billion inboxes. That is the whole
+trick: make the protocol good enough that it spreads one domain at a time.
+</p>
+
+<p style="margin-top:60px"><a class="back" href="/midsig/">← back to midsig</a></p>
+</body>
+</html>
