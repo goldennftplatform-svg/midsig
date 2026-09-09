@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.pyo
+key.hex
+*.eml
+keygen.out
+.venv/
+venv/
