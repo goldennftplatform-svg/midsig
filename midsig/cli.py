@@ -121,7 +121,6 @@ def cmd_send(args):
     import smtplib
     import time
     import uuid
-    from email.message import EmailMessage
 
     seed = _load_seed(args.key_file)
     domain = args.sender.rsplit("@", 1)[1].lower()
@@ -143,24 +142,13 @@ def cmd_send(args):
     )
     signed = core.sign_eml(seed, eml, postage_bits=args.postage_bits)
 
-    msg = EmailMessage()
-    raw_headers, payload_body = core._split(signed)
-    hmap, order = core._header_map(raw_headers)
-    seen = set()
-    for name, value in order:
-        if name in seen:
-            continue
-        seen.add(name)
-        msg[name] = value
-    msg.set_payload(payload_body)
-
     if args.starttls:
         client = smtplib.SMTP(args.smtp, args.port, timeout=30)
         client.starttls()
     else:
         client = smtplib.SMTP_SSL(args.smtp, args.port, timeout=30)
     client.login(args.user, args.password)
-    client.send_message(msg)
+    client.sendmail(args.sender, args.to, signed.encode("utf-8"))
     client.quit()
     print(f"sent signed message {message_id} to {', '.join(args.to)}")
 
