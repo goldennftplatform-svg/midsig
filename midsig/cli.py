@@ -94,8 +94,24 @@ def main(argv=None):
     p.add_argument("--dns-server", default=dns.DEFAULT_SERVER)
     p.set_defaults(func=cmd_verify)
 
+    p = sub.add_parser("daemon", help="run the milter daemon (Postfix/Sendmail plugin)")
+    p.add_argument("--config", required=True, help="path to midsigd.conf")
+    p.set_defaults(func=cmd_daemon)
+
     args = parser.parse_args(argv)
     args.func(args)
+
+
+def cmd_daemon(args):
+    from . import handlers, milter
+
+    socket_spec, handler = handlers.build_from_config(args.config)
+    server = milter.MilterServer(socket_spec, lambda: handler)
+    print(f"midsigd listening on {socket_spec}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        server.shutdown()
 
 
 if __name__ == "__main__":
