@@ -158,8 +158,15 @@ class MilterSession:
 def _listener(path):
     """path: 'unix:/var/run/x.sock' or 'inet:127.0.0.1:8891'."""
     if path.startswith("unix:"):
+        import os
+
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            os.unlink(path[5:])
+        except FileNotFoundError:
+            pass
         sock.bind(path[5:])
+        os.chmod(path[5:], 0o666)  # postfix runs as a different user
         sock.listen(64)
         return sock, None
     if path.startswith("inet:"):
