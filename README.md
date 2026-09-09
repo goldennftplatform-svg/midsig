@@ -3,6 +3,11 @@
 Domain-signed Message-IDs for email. Zero-dependency Python reference
 implementation of the [MIDSIG spec](SPEC.md).
 
+[![Site](https://img.shields.io/badge/site-midsig.live-4fd1a5)](https://goldennftplatform-svg.github.io/midsig/)
+[![Tests](https://img.shields.io/badge/tests-14%2F14%20passing-4fd1a5)]()
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue)]()
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 ```
 midsig/
 ├── midsig/
@@ -10,10 +15,13 @@ midsig/
 │   ├── core.py      # signing, verification, postage
 │   ├── dns.py       # TXT lookup (raw UDP, nslookup fallback)
 │   └── cli.py       # CLI entrypoint
+├── docs/
+│   └── index.html   # live landing page with in-browser postage demo
 ├── tests/
 │   ├── test_ed25519.py  # RFC 8032 official vectors
 │   └── test_core.py     # sign/verify/spoof/postage suites
-└── SPEC.md
+├── SPEC.md
+└── LICENSE
 ```
 
 ## Usage

@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIDSIG — Domain-Signed Message-IDs</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #131826;
+    --panel2: #1a2132;
+    --ink: #e8ecf5;
+    --dim: #9aa4bd;
+    --accent: #4fd1a5;
+    --accent2: #7aa2ff;
+    --danger: #ff6b6b;
+    --line: #232c42;
+    --mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.65 -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 22px; }
+  header {
+    padding: 90px 0 40px;
+    background:
+      radial-gradient(1000px 400px at 50% -100px, rgba(79,209,165,.12), transparent),
+      var(--bg);
+  }
+  .logo {
+    font-family: var(--mono);
+    color: var(--accent);
+    font-size: 15px;
+    letter-spacing: .35em;
+    margin-bottom: 22px;
+  }
+  h1 { font-size: clamp(34px, 6vw, 54px); line-height: 1.1; font-weight: 800; }
+  h1 em { font-style: normal; color: var(--accent); }
+  .sub { color: var(--dim); font-size: 19px; margin-top: 18px; max-width: 620px; }
+  .cta { margin-top: 30px; display: flex; gap: 12px; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 12px 22px; border-radius: 9px;
+    font-weight: 650; text-decoration: none; font-size: 15px;
+  }
+  .btn-primary { background: var(--accent); color: #05271d; }
+  .btn-ghost { border: 1px solid var(--line); color: var(--ink); }
+  .btn-ghost:hover { border-color: var(--accent); }
+  section { padding: 56px 0; border-top: 1px solid var(--line); }
+  h2 { font-size: 26px; margin-bottom: 18px; }
+  h2 .n { color: var(--accent); font-family: var(--mono); margin-right: 10px; font-size: 20px; }
+  p.lead { color: var(--dim); max-width: 700px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-top: 26px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 20px;
+  }
+  .card h3 { font-size: 16px; margin-bottom: 8px; color: var(--accent); font-family: var(--mono); font-weight: 600; }
+  .card p { color: var(--dim); font-size: 14.5px; }
+  pre {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px; overflow-x: auto; font-family: var(--mono); font-size: 13px;
+    color: #c9d4ee; margin-top: 22px; line-height: 1.55;
+  }
+  pre .c { color: #5b6780; }
+  pre .k { color: var(--accent); }
+  pre .s { color: #ffd479; }
+  pre .v { color: var(--accent2); }
+  table { width: 100%; border-collapse: collapse; margin-top: 22px; font-size: 14.5px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: 600; }
+  td.risk { color: var(--danger); font-weight: 650; }
+  td.pass { color: var(--accent); font-weight: 650; }
+  .demo {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    padding: 24px; margin-top: 26px;
+  }
+  .demo label { display: block; font-size: 13px; color: var(--dim); margin: 14px 0 6px; font-family: var(--mono); }
+  .demo input[type=text] {
+    width: 100%; background: var(--panel2); color: var(--ink);
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+    font-family: var(--mono); font-size: 14px;
+  }
+  .demo input[type=range] { width: 100%; }
+  .demo .row { display: flex; gap: 12px; align-items: center; }
+  .demo .hint { color: var(--dim); font-size: 13px; }
+  .stampbox {
+    margin-top: 18px; background: var(--panel2); border-radius: 10px;
+    padding: 14px; font-family: var(--mono); font-size: 13px;
+    color: var(--accent); word-break: break-all; display: none;
+  }
+  .stampbox.show { display: block; }
+  #status { font-family: var(--mono); font-size: 13px; color: var(--dim); min-height: 20px; margin-top: 12px; }
+  #verifyresult { font-family: var(--mono); font-size: 14px; margin-top: 8px; }
+  .ok { color: var(--accent); } .bad { color: var(--danger); }
+  footer { padding: 40px 0 70px; color: var(--dim); font-size: 14px; border-top: 1px solid var(--line); }
+  footer a { color: var(--accent2); text-decoration: none; }
+  .honest {
+    background: linear-gradient(180deg, rgba(122,162,255,.07), transparent);
+    border: 1px solid var(--line); border-radius: 14px; padding: 22px; margin-top: 26px;
+  }
+  .honest h3 { color: var(--accent2); font-family: var(--mono); font-size: 14px; margin-bottom: 10px; }
+  .honest p { color: var(--dim); font-size: 14.5px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="logo">MIDSIG</div>
+    <h1>Domain-signed Message-IDs.<br>Email spoofing, <em>cryptographically dead.</em></h1>
+    <p class="sub">
+      SPF checks the envelope. DKIM checks the relay. MIDSIG binds the message itself to a
+      domain key published in DNS — a forged From address fails a signature, not a heuristic.
+      Plus optional postage: if you can't afford 5 cents of compute, I don't want your mail.
+    </p>
+    <div class="cta">
+      <a class="btn btn-primary" href="#demo">Try the postage demo</a>
+      <a class="btn btn-ghost" href="https://github.com/goldennftplatform-svg/midsig">View on GitHub</a>
+      <a class="btn btn-ghost" href="https://github.com/goldennftplatform-svg/midsig/blob/master/SPEC.md">Read the spec</a>
+    </div>
+  </div>
+</header>
+
+<section id="how">
+  <div class="wrap">
+    <h2><span class="n">01</span>How it works</h2>
+    <p class="lead">Three moving parts. No flag day. Any receiving domain can start enforcing today.</p>
+    <div class="cards">
+      <div class="card">
+        <h3>1 · PUBLISH</h3>
+        <p>Your domain publishes its Ed25519 public key in one DNS TXT record — the exact pattern DKIM already uses.</p>
+      </div>
+      <div class="card">
+        <h3>2 · SIGN</h3>
+        <p>Every outgoing message carries a signature over <em>(domain, Message-ID, timestamp)</em>. The binding survives relays.</p>
+      </div>
+      <div class="card">
+        <h3>3 · VERIFY</h3>
+        <p>The receiver checks the signature against DNS in microseconds. Forged domain = failed crypto = rejected.</p>
+      </div>
+    </div>
+    <pre><span class="c"># 1. publish (once)</span>
+<span class="k">_midsig.example.com.</span>  300 IN TXT <span class="s">"v=midsig1; k=ed25519; p=JwBWTqTtGzbFrFI/EEQJkguLJ1QeJI95mJiXf75n2bI="</span>
+
+<span class="c"># 2. every message carries</span>
+<span class="v">X-Midsig:</span> v=1; d=example.com; i=&lt;abc123@example.com&gt;; t=1720600000; s=&lt;base64 sig&gt;
+<span class="v">X-Midsig-Postage:</span> v=1; n=000000000021f69e; x=0000097599…; b=20
+
+<span class="c"># 3. receiver policy</span>
+$ midsig verify --input mail.eml --required-bits 20
+<span class="k">verdict: pass</span></pre>
+  </div>
+</section>
+
+<section id="attack">
+  <div class="wrap">
+    <h2><span class="n">02</span>What it kills</h2>
+    <table>
+      <tr><th>Attack</th><th>SPF</th><th>DKIM</th><th>MIDSIG</th></tr>
+      <tr><td>Forged From domain (phishing)</td><td class="risk">partial</td><td class="risk">partial</td><td class="pass">rejected</td></tr>
+      <tr><td>Stripped / unverified signing</td><td class="risk">ignorable</td><td class="risk">ignorable</td><td class="pass">quarantined</td></tr>
+      <tr><td>Mass spam from burner domains</td><td class="risk">weak</td><td class="risk">weak</td><td class="pass">priced out</td></tr>
+      <tr><td>Message-ID impersonation / thread-jacking</td><td class="risk">no</td><td class="risk">no</td><td class="pass">bound</td></tr>
+    </table>
+    <p class="lead" style="margin-top:20px">
+      SPF and DKIM stay. MIDSIG adds the one binding they both leave unsigned — the message identity —
+      and gives receivers a <em>pricing knob</em> for their inbox.
+    </p>
+  </div>
+</section>
+
+<section id="demo">
+  <div class="wrap">
+    <h2><span class="n">03</span>Live postage demo</h2>
+    <p class="lead">
+      Real proof-of-work, minted in your browser, no server involved. Raise the bits and watch the
+      compute cost climb — this is the "5 cents" dial.
+    </p>
+    <div class="demo">
+      <label for="domain">FROM DOMAIN</label>
+      <input type="text" id="domain" value="example.com" spellcheck="false">
+      <label for="msgid">MESSAGE-ID</label>
+      <input type="text" id="msgid" value="<demo-42@example.com>" spellcheck="false">
+      <label for="bits">POSTAGE DIFFICULTY — <span id="bitslabel">16</span> leading zero bits (<span id="cost">~65k</span> hashes expected)</label>
+      <input type="range" id="bits" min="4" max="24" value="16">
+      <div class="row" style="margin-top:18px">
+        <button class="btn btn-primary" id="mint" style="border:none;cursor:pointer">Mint postage stamp</button>
+        <span class="hint">run this in the main thread so you <em>feel</em> the spammer's pain</span>
+      </div>
+      <div id="status"></div>
+      <div class="stampbox" id="stampbox"></div>
+      <div id="verifyresult"></div>
+    </div>
+  </div>
+</section>
+
+<section id="honest">
+  <div class="wrap">
+    <h2><span class="n">04</span>Honest lineage</h2>
+    <div class="honest">
+      <h3>// WE STOOD ON SHOULDERS, AND WE SAY SO</h3>
+      <p>
+        Hashcash (1997) invented PoW postage for email. Penny Black (2003) and Camram (2004) tried to
+        make it mainstream. DKIM (2007) proved domain-key signing works at internet scale. MIDSIG is the
+        narrow slice DKIM leaves unsigned — the Message-ID binding — plus a modern pricing knob. And no,
+        the spoofing fix doesn't need a blockchain: DNS + signatures do it deterministically. A
+        blockchain only earns its keep here as the <em>payment rail</em> for real postage later.
+        The hard part was never crypto. It's convincing receiving domains to enforce it — which is why
+        this is designed for incremental, unilateral adoption.
+      </p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    MIDSIG v0.1 · zero-dependency reference implementation · <a href="https://github.com/goldennftplatform-svg/midsig">GitHub</a> ·
+    <a href="https://github.com/goldennftplatform-svg/midsig/blob/master/SPEC.md">SPEC</a> ·
+    <a href="https://github.com/goldennftplatform-svg/midsig/blob/master/LICENSE">MIT</a>
+  </div>
+</footer>
+
+<script>
+// Compact SHA-256 (public domain style implementation)
+const SHA256 = (() => {
+  const K = new Uint32Array([
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+  ]);
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  function digest(msg) {
+    const data = new TextEncoder().encode(msg);
+    const l = data.length;
+    const withOne = l + 1;
+    const paddedLen = withOne + ((64 - ((withOne + 8) % 64)) % 64) + 8;
+    const buf = new Uint8Array(paddedLen);
+    buf.set(data);
+    buf[l] = 0x80;
+    const dv = new DataView(buf.buffer);
+    dv.setUint32(paddedLen - 8, Math.floor(l / 0x20000000), false);
+    dv.setUint32(paddedLen - 4, (l << 3) >>> 0, false);
+    const H = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
+    const w = new Uint32Array(64);
+    for (let off = 0; off < paddedLen; off += 64) {
+      for (let i = 0; i < 16; i++) w[i] = dv.getUint32(off + i * 4, false);
+      for (let i = 16; i < 64; i++) {
+        const s0 = rotr(w[i-15],7) ^ rotr(w[i-15],18) ^ (w[i-15]>>>3);
+        const s1 = rotr(w[i-2],17) ^ rotr(w[i-2],19) ^ (w[i-2]>>>10);
+        w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;
+      }
+      let [a,b,c,d,e,f,g,h] = H;
+      for (let i = 0; i < 64; i++) {
+        const S1 = rotr(e,6) ^ rotr(e,11) ^ rotr(e,25);
+        const ch = (e & f) ^ (~e & g);
+        const t1 = (h + S1 + ch + K[i] + w[i]) >>> 0;
+        const S0 = rotr(a,2) ^ rotr(a,13) ^ rotr(a,22);
+        const maj = (a & b) ^ (a & c) ^ (b & c);
+        const t2 = (S0 + maj) >>> 0;
+        h=g; g=f; f=e; e=(d+t1)>>>0; d=c; c=b; b=a; a=(t1+t2)>>>0;
+      }
+      H[0]=(H[0]+a)>>>0; H[1]=(H[1]+b)>>>0; H[2]=(H[2]+c)>>>0; H[3]=(H[3]+d)>>>0;
+      H[4]=(H[4]+e)>>>0; H[5]=(H[5]+f)>>>0; H[6]=(H[6]+g)>>>0; H[7]=(H[7]+h)>>>0;
+    }
+    let out = "";
+    for (const v of H) out += v.toString(16).padStart(8, "0");
+    return out;
+  }
+  return { digest };
+})();
+
+const $ = id => document.getElementById(id);
+const bitsEl = $("bits"), labelEl = $("bitslabel"), costEl = $("cost");
+const stampbox = $("stampbox"), statusEl = $("status"), verifyEl = $("verifyresult");
+
+function leadingZeros(hex) {
+  let zeros = 0;
+  for (const ch of hex) {
+    if (ch === "0") { zeros += 4; continue; }
+    const nibble = parseInt(ch, 16);
+    zeros += 4 - Math.max(1, Math.floor(Math.log2(nibble)) + 1);
+    break;
+  }
+  return zeros;
+}
+
+bitsEl.addEventListener("input", () => {
+  const b = parseInt(bitsEl.value, 10);
+  labelEl.textContent = b;
+  costEl.textContent = "~" + Math.round(2 ** b).toLocaleString() + " hashes expected";
+  stampbox.classList.remove("show");
+  verifyEl.textContent = "";
+});
+
+$("mint").addEventListener("click", () => {
+  const domain = $("domain").value.trim().toLowerCase();
+  const msgid = $("msgid").value.trim();
+  const ts = Math.floor(Date.now() / 1000);
+  const bits = parseInt(bitsEl.value, 10);
+  if (!domain || !msgid) { statusEl.textContent = "fill in both fields first"; return; }
+  statusEl.textContent = "minting…";
+  stampbox.classList.remove("show");
+  verifyEl.textContent = "";
+  setTimeout(() => {
+    const t0 = performance.now();
+    let nonce = 0, hash = "";
+    for (;;) {
+      const challenge = `mailstamp1:${domain}\n${msgid}\n${ts}\n${nonce.toString(16).padStart(16, "0")}`;
+      hash = SHA256.digest(challenge);
+      if (leadingZeros(hash) >= bits) break;
+      nonce++;
+    }
+    const ms = performance.now() - t0;
+    const header = `X-Midsig-Postage: v=1; n=${nonce.toString(16).padStart(16, "0")}; x=${hash}; b=${bits}`;
+    stampbox.textContent = header;
+    stampbox.classList.add("show");
+    statusEl.textContent = `${nonce.toLocaleString()} hashes in ${(ms/1000).toFixed(2)}s — a spammer pays this for every single message`;
+    verifyEl.textContent = "verification: " + (leadingZeros(hash) >= bits ? "pass" : "fail");
+    verifyEl.className = leadingZeros(hash) >= bits ? "ok" : "bad";
+  }, 50);
+});
+</script>
+</body>
+</html>
