@@ -142,9 +142,17 @@ class Ledger:
             if pending >= 10:
                 raise Rejected("Too many open purchase orders; reuse an existing order")
             identifier = secrets.token_hex(32)
+            ttl = 7200 if chain == "square" else 1800
             db.execute("""INSERT INTO orders(id,domain,user_id,chain,payer,units,stamps,created,expires)
-                          VALUES (?,?,?,?,?,?,?,?,?)""", (identifier, domain, user_id, chain, payer, stamps * STAMP_UNITS, stamps, now, now + 1800))
+                          VALUES (?,?,?,?,?,?,?,?,?)""", (identifier, domain, user_id, chain, payer, stamps * STAMP_UNITS, stamps, now, now + ttl))
         return self.order(user_id, identifier)
+
+    def order_by_id(self, identifier):
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM orders WHERE id=?", (identifier,)).fetchone()
+        if row is None:
+            raise Rejected("Purchase order not found")
+        return dict(row)
 
     def order(self, user_id, identifier):
         with self.connect() as db:

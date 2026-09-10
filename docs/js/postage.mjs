@@ -43,8 +43,8 @@ function restorePreferences() {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey));
     if (!saved || typeof saved !== "object") return;
-    try { bundleById(saved.bundle); form.elements.bundle.value = saved.bundle; } catch { /* default */ }
-    try { routeById(saved.route); form.elements.route.value = saved.route; } catch { /* default */ }
+    try { bundleById(saved.bundle); if (saved.bundle === "ten" || saved.bundle === "stack") form.elements.bundle.value = saved.bundle; } catch { /* default */ }
+    form.elements.route.value = "card";
     if (typeof saved.domain === "string" && saved.domain.length <= 253) {
       $("sending-domain").value = saved.domain;
     }
@@ -55,10 +55,12 @@ function render() {
   const bundle = bundleById(bundleId());
   $("art-count").textContent = bundle.stamps;
   $("summary-stamps").textContent = `${bundle.stamps} stamps`;
-  $("summary-amount").textContent = `${formatUsdc(BigInt(bundle.stamps) * STAMP_UNITS)} USDC`;
+  const usd = `$${(bundle.stamps * 5 / 100).toFixed(2)}`;
+  $("summary-amount").textContent = usd;
+  if ($("summary-due")) $("summary-due").textContent = usd;
   $("checkout-button-label").textContent = privySession.authenticated
-    ? `Buy ${bundle.stamps} stamps`
-    : `Preview ${bundle.stamps} stamps`;
+    ? `Pay ${usd} with card`
+    : `Sign in to pay ${usd}`;
   $("checkout-button").disabled = false;
   $("wallet-status").textContent = state.wallet
     ? `${state.wallet.name} · ${shortAddress(state.wallet.address)}`
@@ -252,7 +254,7 @@ form.addEventListener("submit", event => {
   $("review-domain").textContent = `${order.domain} · not verified`;
   $("review-stamps").textContent = `${order.stamps} stamps`;
   $("review-route").textContent = order.route.label;
-  $("review-amount").textContent = `${order.usdc} USDC`;
+  $("review-amount").textContent = `$${(order.stamps * 5 / 100).toFixed(2)}`;
   $("review-dialog").showModal();
 });
 
@@ -272,34 +274,17 @@ async function api(path, body) {
 $("finish-preview").addEventListener("click", async () => {
   if (!state.order) { $("review-dialog").close(); return; }
   if (!privySession.authenticated || !privySession.accessToken) {
-    state.receipt = previewReceipt(state.order, state.wallet?.kind || "none");
-    $("done-stamps").textContent = `${state.order.stamps} preview stamps`;
-    $("done-domain").textContent = `For ${state.order.domain} · ${state.order.usdc} USDC planned postage`;
-    $("review-dialog").close();
-    $("done-dialog").showModal();
-    $("page-status").textContent = "Preview complete. Sign in to enroll the domain and buy live stamps.";
-    return;
-  }
-  if (!state.wallet?.address) {
-    showMessage("domain-error", "Connect a wallet first so the order can name the payer.");
+    showMessage("domain-error", "Sign in with email first, then pay with your card.");
     $("review-dialog").close();
     return;
   }
   $("finish-preview").disabled = true;
   try {
-    await api("/domain/enroll", { domain: state.order.domain });
-    const created = await api("/order/create", {
+    const created = await api("/order/card", {
       domain: state.order.domain,
-      chain: state.order.routeId,
       bundle: state.order.bundleId,
-      payer: state.wallet.address,
     });
-    state.receipt = created;
-    $("done-stamps").textContent = `${created.bundle_stamps} stamps · ${created.usdc} USDC`;
-    $("done-domain").textContent = `Send USDC to ${created.receiver} then paste the tx hash to credit ${created.domain}`;
-    $("review-dialog").close();
-    $("done-dialog").showModal();
-    $("page-status").textContent = `Order ${created.order_id.slice(0, 8)}… created. Pay native USDC on ${created.chain}, then credit.`;
+    window.location.href = created.checkout_url;
   } catch (error) {
     showMessage("domain-error", error.message);
     $("review-dialog").close();
@@ -342,8 +327,8 @@ if (PRIVY_SETTINGS.appId) {
   root.hidden = false;
   root.textContent = "Loading Privy sign-in…";
   document.querySelector(".preview-notice span").textContent =
-    "Sign in, enroll your sending domain from DNS, then pay native USDC on Base. Solana credit is not live yet.";
-  document.querySelector(".under-button").textContent = "Live orders require Privy login and a connected payer wallet.";
+    "Sign in with email, enter the domain you send from, then pay with a card. $10 minimum.";
+  document.querySelector(".under-button").textContent = "Card checkout. No wallet. No crypto.";
   $("browser-wallet-row").hidden = true;
   import("../privy/privy-entry.js").then(({ mountPrivy }) => {
     mountPrivy({

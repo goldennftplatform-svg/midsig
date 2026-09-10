@@ -3,9 +3,13 @@ export const STAMP_UNITS = 50_000n;
 export const BUNDLES = Object.freeze([
   Object.freeze({ id: "starter", stamps: 20, title: "A little hello" }),
   Object.freeze({ id: "regular", stamps: 100, title: "Keep in touch" }),
+  Object.freeze({ id: "ten", stamps: 200, title: "A book of stamps" }),
   Object.freeze({ id: "stack", stamps: 500, title: "The full stack" }),
 ]);
 export const ROUTES = Object.freeze({
+  card: Object.freeze({
+    label: "Card", walletType: "none",
+  }),
   base: Object.freeze({
     label: "USDC on Base", walletType: "evm", chainId: "0x2105",
     receiver: "0x47cf60BdD877203264921D05CE26F81f6d36Aa3E",

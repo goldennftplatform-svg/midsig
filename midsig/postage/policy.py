@@ -4,7 +4,9 @@ import re
 
 APP_ID = "cmtvhjy3d01u50bkzpiwylxbp"
 STAMP_UNITS = 50_000
-BUNDLES = {"starter": 20, "regular": 100, "stack": 500}
+BUNDLES = {"starter": 20, "regular": 100, "ten": 200, "stack": 500}
+CARD_CENTS = {"ten": 1000, "stack": 2500}
+CARD_MIN_CENTS = 1000
 BASE_CHAIN_ID = 8453
 BASE_USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 BASE_RECEIVER = "0x47cf60BdD877203264921D05CE26F81f6d36Aa3E"
@@ -83,6 +85,8 @@ def base58_bytes(value, size):
 
 
 def payer_address(chain, value):
+    if chain == "square":
+        return "square:card"
     if chain == "base":
         value = evm_address(value)
         if value == BASE_RECEIVER.lower():
@@ -92,7 +96,7 @@ def payer_address(chain, value):
         if value == SOL_RECEIVER:
             raise Rejected("Self-transfers do not fund postage")
     else:
-        raise Rejected("Only native USDC on Base and Solana is supported")
+        raise Rejected("Only card or native USDC on Base and Solana is supported")
     return value
 
 

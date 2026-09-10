@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { BUNDLES, STAMP_UNITS, ROUTES, selection, normalizeDomain, formatUsdc, previewReceipt } from "../docs/js/postage-model.mjs";
 
 test("every bundle preserves the five-cent price without floating point", () => {
-  const expected = [[20, "1.00", 1_000_000n], [100, "5.00", 5_000_000n], [500, "25.00", 25_000_000n]];
+  const expected = [[20, "1.00", 1_000_000n], [100, "5.00", 5_000_000n], [200, "10.00", 10_000_000n], [500, "25.00", 25_000_000n]];
   BUNDLES.forEach((bundle, i) => {
     const result = selection(bundle.id, "base", "example.com");
     assert.deepEqual([result.stamps, result.usdc, result.units], expected[i]);

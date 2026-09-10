@@ -18,15 +18,18 @@ from pydantic import BaseModel
 from .core import _pubkey_from_txt
 from .dns import DnsUnavailable, query_txt
 from .postage.ledger import Ledger
+from .postage import square as squarepay
 from .postage.policy import (
     APP_ID,
     BASE_RECEIVER,
     BASE_USDC,
     BUNDLES,
+    CARD_CENTS,
     Conflict,
     Rejected,
     SOL_RECEIVER,
     STAMP_UNITS,
+    Unavailable,
     domain_name,
 )
 
@@ -42,13 +45,15 @@ CSP = (
     "font-src 'self' data:; "
     "object-src 'none'; "
     "base-uri 'self'; "
-    "form-action 'self'; "
+    "form-action 'self' https://square.link https://checkout.square.site; "
     "frame-ancestors 'none'; "
     "child-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org; "
     "frame-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org https://challenges.cloudflare.com; "
     "connect-src 'self' https://auth.privy.io wss://relay.walletconnect.com wss://relay.walletconnect.org "
     "wss://www.walletlink.org https://*.rpc.privy.systems https://explorer-api.walletconnect.com "
     "https://mainnet.base.org https://api.mainnet-beta.solana.com "
+    "https://connect.squareup.com https://connect.squareupsandbox.com "
+    "https://square.link https://checkout.square.site "
     "http://159.223.184.36:8767 https://mail.aisp.live https://midsig.aisp.live; "
     "worker-src 'self'; "
     "manifest-src 'self'"
@@ -125,6 +130,8 @@ def current_user(authorization: Optional[str] = Header(None)) -> str:
 def _http_error(exc: Exception) -> HTTPException:
     if isinstance(exc, Conflict):
         return HTTPException(status.HTTP_409_CONFLICT, str(exc))
+    if isinstance(exc, Unavailable):
+        return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
     if isinstance(exc, Rejected):
         return HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
     return HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc))
@@ -144,6 +151,11 @@ class OrderBody(BaseModel):
 class CreditBody(BaseModel):
     order_id: str
     tx_id: str
+
+
+class CardOrderBody(BaseModel):
+    domain: str
+    bundle: str
 
 
 def _rpc(url: str, method: str, params: list) -> Any:
@@ -287,6 +299,78 @@ def inbox_list(recipient: str, user_id: str = Depends(current_user)):
 @app.get("/me")
 def me(user_id: str = Depends(current_user)):
     return {"user_id": user_id, "accounts": get_ledger().accounts(user_id)}
+
+
+@app.post("/order/card")
+def order_card(body: CardOrderBody, user_id: str = Depends(current_user)):
+    try:
+        if body.bundle not in CARD_CENTS:
+            raise Rejected("Card checkout starts at $10")
+        db = get_ledger()
+        domain = domain_name(body.domain)
+        try:
+            db.account(domain, user_id)
+        except Rejected:
+            records = query_txt(f"_midsig.{domain}")
+            pub = _pubkey_from_txt(records)
+            if pub is None:
+                raise Rejected("Publish a _midsig DNS record for this domain first")
+            enrollment = db.enrollment(user_id, domain)
+            db.activate_domain(enrollment, pub)
+        order = db.create_order(user_id, domain, "square", "square:card", body.bundle)
+        redirect = "https://mail.aisp.live/postage.html?paid=1&order=" + order["id"]
+        link = squarepay.create_payment_link(order, redirect)
+        return {
+            "order_id": order["id"],
+            "domain": order["domain"],
+            "stamps": order["stamps"],
+            "usd": f"{link['cents'] / 100:.2f}",
+            "checkout_url": link["checkout_url"],
+        }
+    except DnsUnavailable as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+    except (Rejected, Conflict, Unavailable) as exc:
+        raise _http_error(exc)
+
+
+@app.post("/webhooks/square")
+async def square_webhook(
+    request: Request,
+    x_square_hmacsha256_signature: str = Header(None),
+    x_square_signature: str = Header(None),
+):
+    body = await request.body()
+    signature = x_square_hmacsha256_signature or x_square_signature or ""
+    notify = os.getenv("SQUARE_WEBHOOK_URL", "https://mail.aisp.live/webhooks/square")
+    if not squarepay.verify_webhook(body, signature, notify):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid Square signature")
+    try:
+        payload = json.loads(body.decode())
+    except Exception:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid JSON")
+    payment = ((payload.get("data") or {}).get("object") or {}).get("payment") or {}
+    if payment.get("status") != "COMPLETED":
+        return {"ok": True, "ignored": True}
+    try:
+        order_id = squarepay.payment_order_id(payment)
+        db = get_ledger()
+        order = db.order_by_id(order_id)
+        if order["chain"] != "square":
+            raise Rejected("Not a card order")
+        amount = (payment.get("amount_money") or {}).get("amount")
+        expected = squarepay.cents_for(squarepay._bundle_from_stamps(order["stamps"]))
+        if amount != expected:
+            raise Rejected("Paid amount does not match the stamp book")
+        proof = {
+            "chain": "square",
+            "order_id": order_id,
+            "units": order["units"],
+            "cents": amount,
+        }
+        result = db.credit(order["user_id"], order_id, payment.get("id"), proof)
+        return result
+    except (Rejected, Conflict) as exc:
+        raise _http_error(exc)
 
 
 docs_path = os.path.abspath(DOCS_DIR)

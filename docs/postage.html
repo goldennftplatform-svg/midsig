@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Preview MIDSIG prepaid email postage. Pick a bundle, choose Base or Solana, and review. Real payments are not yet enabled.">
+  <meta name="description" content="Buy MIDSIG email postage with a card. $10 minimum. No crypto required.">
   <meta name="color-scheme" content="dark">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://challenges.cloudflare.com 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; child-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org; frame-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org https://challenges.cloudflare.com; connect-src 'self' https://auth.privy.io wss://relay.walletconnect.com wss://relay.walletconnect.org wss://www.walletlink.org https://*.rpc.privy.systems https://explorer-api.walletconnect.com https://mainnet.base.org https://api.mainnet-beta.solana.com http://159.223.184.36:8767 https://mail.aisp.live https://midsig.aisp.live; worker-src 'self'; manifest-src 'self'">
   <title>Buy postage — MIDSIG checkout preview</title>
@@ -16,7 +16,7 @@
   <div class="shell">
     <header class="topbar">
       <a class="wordmark" href="index.html" aria-label="MIDSIG home"><span class="brand-icon" aria-hidden="true">m<span>↗</span></span> MIDSIG<span class="wordmark-extra"> / POST OFFICE</span></a>
-      <span class="mode"><span aria-hidden="true"></span> CHECKOUT PREVIEW</span>
+      <span class="mode"><span aria-hidden="true"></span> PAY WITH CARD</span>
     </header>
 
     <main>
@@ -38,32 +38,25 @@
         </div>
 
         <div class="perks"><span><b>01</b> Buy a bundle</span><span><b>02</b> Sign your mail</span><span><b>03</b> Make it count</span></div>
-        <p class="unit-note">Planned price: <strong>0.05 USDC</strong> per message, per recipient.<br>Sender-domain verification is required before paid sending.</p>
+        <p class="unit-note">Price: <strong>5¢</strong> per message, per recipient. Card minimum <strong>$10</strong>.<br>Pay like a normal checkout. No wallet. No crypto.</p>
       </section>
 
       <section class="checkout-panel" id="checkout" aria-labelledby="checkout-heading">
         <div class="panel-heading"><div><span class="eyebrow">YOUR NEXT HELLO STARTS HERE</span><h2 id="checkout-heading">Pick your postage.</h2></div><span class="little-envelope" aria-hidden="true">↗</span></div>
-        <div class="preview-notice"><strong>Try the checkout. Keep your coins.</strong><span>Payments and usable stamps aren't enabled yet. This preview never requests a signature or sends money.</span></div>
+        <div class="preview-notice"><strong>Pay with a card. Send better mail.</strong><span>Sign in, enter your sending domain, pay $10 or $25. Stamps are added automatically.</span></div>
         <noscript><p class="error">This preview needs JavaScript. No payment can be made from this page.</p></noscript>
 
         <form id="postage-form" novalidate>
           <fieldset class="bundle-fieldset">
             <legend><span class="step">1</span> Your stamp book</legend>
             <div class="bundles">
-              <label class="bundle"><input type="radio" name="bundle" value="starter" checked><span class="bundle-content"><span class="bundle-tag">START HERE</span><strong>20<span>stamps</span></strong><span class="bundle-price">1 USDC</span><span class="bundle-desc">A little hello</span></span></label>
-              <label class="bundle"><input type="radio" name="bundle" value="regular"><span class="bundle-content"><span class="bundle-tag">KEEP IN TOUCH</span><strong>100<span>stamps</span></strong><span class="bundle-price">5 USDC</span><span class="bundle-desc">Your regular stack</span></span></label>
-              <label class="bundle"><input type="radio" name="bundle" value="stack"><span class="bundle-content"><span class="bundle-tag">STOCK UP</span><strong>500<span>stamps</span></strong><span class="bundle-price">25 USDC</span><span class="bundle-desc">Say a little more</span></span></label>
+              <label class="bundle"><input type="radio" name="bundle" value="ten" checked><span class="bundle-content"><span class="bundle-tag">START HERE</span><strong>200<span>stamps</span></strong><span class="bundle-price">$10</span><span class="bundle-desc">A book of stamps</span></span></label>
+              <label class="bundle"><input type="radio" name="bundle" value="stack"><span class="bundle-content"><span class="bundle-tag">STOCK UP</span><strong>500<span>stamps</span></strong><span class="bundle-price">$25</span><span class="bundle-desc">Say a little more</span></span></label>
             </div>
           </fieldset>
 
-          <fieldset class="route-fieldset">
-            <legend><span class="step">2</span> Your payment route</legend>
-            <div class="routes">
-              <label class="route"><input type="radio" name="route" value="base" checked><span class="route-content"><span class="coin base-coin" aria-hidden="true">−</span><span><strong>USDC</strong><small>on Base</small></span><span class="radio-dot" aria-hidden="true"></span></span></label>
-              <label class="route"><input type="radio" name="route" value="solana"><span class="route-content"><span class="coin sol-coin" aria-hidden="true">≋</span><span><strong>USDC</strong><small>on Solana</small></span><span class="radio-dot" aria-hidden="true"></span></span></label>
-            </div>
-            <p class="route-note">Have ETH or SOL instead? <span>Native-coin swaps are planned.</span> Pond0x integration is not yet verified.</p>
-          </fieldset>
+          <input type="hidden" name="route" value="card">
+          <p class="route-note">Pay with a debit or credit card. Minimum $10.</p>
 
           <div class="domain-field">
             <label for="sending-domain"><span class="step">3</span> Your sending domain <span class="optional-label">ONE-TIME SETUP</span></label>
@@ -73,9 +66,9 @@
           </div>
 
           <div class="order-summary" aria-label="Order summary">
-            <div><span id="summary-stamps">20 stamps</span><strong id="summary-amount">1.00 USDC</strong></div>
-            <div class="muted"><span>Network / swap fees</span><span>Quoted when live</span></div>
-            <div class="preview-due"><span>Due in this preview</span><strong>Nothing. Zero funds.</strong></div>
+            <div><span id="summary-stamps">200 stamps</span><strong id="summary-amount">$10.00</strong></div>
+            <div class="muted"><span>Card processing</span><span>Handled by Square</span></div>
+            <div class="preview-due"><span>Due today</span><strong id="summary-due">$10.00</strong></div>
           </div>
 
           <div class="wallet-row" id="browser-wallet-row"><span id="wallet-status">No wallet needed to try it</span><button type="button" class="text-button" id="connect-wallet">Connect wallet <span aria-hidden="true">↗</span></button></div>
