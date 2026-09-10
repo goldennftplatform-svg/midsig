@@ -8,10 +8,11 @@ import os
 import urllib.request
 from typing import Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel
 
 from .core import _pubkey_from_txt
@@ -33,11 +34,45 @@ LEDGER_PATH = os.getenv("MIDSIG_LEDGER_PATH", "./ledger.db")
 DOCS_DIR = os.getenv("MIDSIG_DOCS_DIR", os.path.join(os.path.dirname(__file__), "..", "docs"))
 BASE_RPC = os.getenv("MIDSIG_BASE_RPC", "https://mainnet.base.org")
 
+CSP = (
+    "default-src 'self'; "
+    "script-src 'self' https://challenges.cloudflare.com 'wasm-unsafe-eval'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob: https:; "
+    "font-src 'self' data:; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "frame-ancestors 'none'; "
+    "child-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org; "
+    "frame-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org https://challenges.cloudflare.com; "
+    "connect-src 'self' https://auth.privy.io wss://relay.walletconnect.com wss://relay.walletconnect.org "
+    "wss://www.walletlink.org https://*.rpc.privy.systems https://explorer-api.walletconnect.com "
+    "https://mainnet.base.org https://api.mainnet-beta.solana.com "
+    "http://159.223.184.36:8767 https://mail.aisp.live https://midsig.aisp.live; "
+    "worker-src 'self'; "
+    "manifest-src 'self'"
+)
+
+
+class SecurityHeaders(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = CSP
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
+
 app = FastAPI(title="MIDSIG Paid Postage", version="0.2.0")
+app.add_middleware(SecurityHeaders)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://midsig.aisp.live",
+        "https://mail.aisp.live",
+        "https://aisp.live",
         "http://127.0.0.1:8766",
         "http://127.0.0.1:8767",
         "http://159.223.184.36:8767",
