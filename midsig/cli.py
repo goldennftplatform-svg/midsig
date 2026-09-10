@@ -3,6 +3,7 @@ import base64
 import re
 import secrets
 import sys
+import time
 
 from . import core, dns, ed25519
 
@@ -32,6 +33,88 @@ def cmd_keygen(args):
     print(f"# secret key (keep private, never publish)\n{seed.hex()}\n")
     print(f"# public key\n{pub.hex()}\n")
     print(f"# publish this DNS record:\n{zone}")
+
+
+def cmd_setup(args):
+    """Generate a key, save it, and print the exact DNS records to publish."""
+    seed = secrets.token_bytes(32)
+    pub = ed25519.public_key(seed)
+    record = f'v=midsig1; k=ed25519; p={base64.b64encode(pub).decode()}'
+    zone = f'_midsig.{args.domain}. 300 IN TXT "{record}"'
+    keyfile = args.key_file or f"{args.domain}.hex"
+
+    with open(keyfile, "w", encoding="utf-8") as fh:
+        fh.write(f"{args.domain} domain signing key (MIDSIG) — KEEP PRIVATE, never commit anywhere.\n\n")
+        fh.write("secret seed (64 hex chars)\n")
+        fh.write(seed.hex() + "\n")
+
+    print(f"key saved:      {keyfile}")
+    print(f"\npublish this DNS record (at your DNS host, for {args.domain}):\n")
+    print(f"    {zone}")
+    print()
+    print("verifiers will resolve:  TXT _midsig.<domain>")
+    print("once published, test with:  midsig verify --input signed.eml")
+    if args.wait:
+        print(f"\nwaiting up to {args.wait}s for the record to publish...")
+        deadline = time.monotonic() + args.wait
+        while time.monotonic() < deadline:
+            try:
+                found = dns.query_txt(f"{core.TXT_PREFIX}.{args.domain}")
+            except Exception:
+                found = None
+            if record in (found or []):
+                print("propagated: the record is live.")
+                return
+            time.sleep(5)
+        print("not seen yet — DNS propagation can take minutes. Re-run with --wait to poll.")
+
+
+def cmd_demo(args):
+    """Offline proof-of-life: sign a message, then show a tampered one fails.
+
+    Runs entirely on this machine — no DNS, no server, no key you need to
+    publish. The MIDSIG flow in under ten lines of terminal output.
+    """
+    seed = secrets.token_bytes(32)
+    pub = ed25519.public_key(seed)
+    record = f'v=midsig1; k=ed25519; p={base64.b64encode(pub).decode()}'
+    domain = args.domain or "example.com"
+    eml = (
+        f"From: Alice <alice@{domain}>\r\n"
+        f"To: Bob <bob@other.example>\r\n"
+        f"Subject: signed, then tampered\r\n"
+        f"Message-ID: <demo-1@{domain}>\r\n"
+        "\r\n"
+        "This is the payload.\r\n"
+    )
+    signed = core.sign_eml(seed, eml, postage_bits=args.postage_bits)
+
+    def lookup(_d):
+        return [record]
+
+    verdict, reasons = core.verify_eml(signed, lookup=lookup, required_bits=args.postage_bits)
+    if verdict != "pass":
+        print(f"[FAIL] genuine message rejected: {reasons}")
+        return 1
+
+    tampered = signed.replace("<demo-1@example.com>", "<demo-1@evil.example>")
+    verdict2, reasons2 = core.verify_eml(tampered, lookup=lookup, required_bits=args.postage_bits)
+
+    print(f"domain:     {domain}")
+    print(f"key:        {pub.hex()}")
+    print(f"DNS record: {record}")
+    print()
+    print(f"genuine message  -> {verdict.upper()}")
+    label = verdict2.upper()
+    cause = (reasons2 or ["(not shown)"])[0]
+    print(f"swapped Message-ID -> {label}: {cause}")
+    print()
+    if verdict == "pass" and verdict2 != "pass":
+        print("MIDSIG binds sender domain + Message-ID. Change either and the")
+        print("signature fails. That is the anti-spoofing guarantee it gives.")
+        return 0
+    print("something is inconsistent with the offline demo key — bug.")
+    return 1
 
 
 def cmd_publish(args):
@@ -73,6 +156,17 @@ def main(argv=None):
     p = sub.add_parser("keygen", help="generate a domain signing key + DNS record")
     p.add_argument("--domain", required=True)
     p.set_defaults(func=cmd_keygen)
+
+    p = sub.add_parser("setup", help="generate + save a key and print the DNS record to publish")
+    p.add_argument("--domain", required=True)
+    p.add_argument("--key-file", help="where to save the key (default: <domain>.hex)")
+    p.add_argument("--wait", type=int, default=0, help="poll DNS for propagation up to N seconds")
+    p.set_defaults(func=cmd_setup)
+
+    p = sub.add_parser("demo", help="offline proof-of-life: sign then tamper, show pass/fail (no DNS, no server)")
+    p.add_argument("--domain", default="example.com")
+    p.add_argument("--postage-bits", type=int, default=0)
+    p.set_defaults(func=cmd_demo)
 
     p = sub.add_parser("publish", help="print the DNS record for an existing key")
     p.add_argument("--domain", required=True)
