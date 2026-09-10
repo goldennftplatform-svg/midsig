@@ -55,8 +55,19 @@
             </div>
           </fieldset>
 
-          <input type="hidden" name="route" value="card">
+          <input type="hidden" name="route" value="card" id="route-input">
           <p class="route-note">Pay with a debit or credit card. Minimum $10.</p>
+          <details class="crypto-details">
+            <summary>Pay with crypto instead</summary>
+            <fieldset class="route-fieldset">
+              <legend>USDC</legend>
+              <div class="routes">
+                <label class="route"><input type="radio" name="crypto-route" value="base"><span class="route-content"><span class="coin base-coin" aria-hidden="true">−</span><span><strong>USDC</strong><small>on Base</small></span><span class="radio-dot" aria-hidden="true"></span></span></label>
+                <label class="route"><input type="radio" name="crypto-route" value="solana"><span class="route-content"><span class="coin sol-coin" aria-hidden="true">≋</span><span><strong>USDC</strong><small>on Solana</small></span><span class="radio-dot" aria-hidden="true"></span></span></label>
+              </div>
+              <p class="route-note">Same stamp books. You send USDC yourself. Solana credit is not live yet.</p>
+            </fieldset>
+          </details>
 
           <div class="domain-field">
             <label for="sending-domain"><span class="step">3</span> Your sending domain <span class="optional-label">ONE-TIME SETUP</span></label>

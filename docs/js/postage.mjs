@@ -58,9 +58,11 @@ function render() {
   const usd = `$${(bundle.stamps * 5 / 100).toFixed(2)}`;
   $("summary-amount").textContent = usd;
   if ($("summary-due")) $("summary-due").textContent = usd;
+  const card = routeId() === "card";
   $("checkout-button-label").textContent = privySession.authenticated
-    ? `Pay ${usd} with card`
+    ? (card ? `Pay ${usd} with card` : `Pay ${usd} in USDC`)
     : `Sign in to pay ${usd}`;
+  $("browser-wallet-row").hidden = card;
   $("checkout-button").disabled = false;
   $("wallet-status").textContent = state.wallet
     ? `${state.wallet.name} · ${shortAddress(state.wallet.address)}`
@@ -223,11 +225,22 @@ $("wallet-dialog").addEventListener("close", () => {
 });
 
 form.addEventListener("change", event => {
-  if (event.target.name === "route") {
-    disconnect("Payment route changed. You can reconnect a compatible wallet or continue the preview without one.");
+  if (event.target.name === "crypto-route") {
+    $("route-input").value = event.target.value;
+    disconnect("Switched to crypto. Connect a wallet to pay in USDC.");
+  } else if (event.target.name === "route") {
+    disconnect("Payment route changed.");
   } else invalidateOrder();
   savePreferences();
   render();
+});
+document.querySelector(".crypto-details")?.addEventListener("toggle", event => {
+  if (!event.target.open) {
+    $("route-input").value = "card";
+    for (const input of document.querySelectorAll("input[name=crypto-route]")) input.checked = false;
+    invalidateOrder();
+    render();
+  }
 });
 $("sending-domain").addEventListener("input", () => {
   $("sending-domain").removeAttribute("aria-invalid");
@@ -280,11 +293,31 @@ $("finish-preview").addEventListener("click", async () => {
   }
   $("finish-preview").disabled = true;
   try {
-    const created = await api("/order/card", {
+    if (state.order.routeId === "card") {
+      const created = await api("/order/card", {
+        domain: state.order.domain,
+        bundle: state.order.bundleId,
+      });
+      window.location.href = created.checkout_url;
+      return;
+    }
+    if (!state.wallet?.address) {
+      showMessage("domain-error", "Connect a wallet first to pay in USDC.");
+      $("review-dialog").close();
+      return;
+    }
+    await api("/domain/enroll", { domain: state.order.domain });
+    const created = await api("/order/create", {
       domain: state.order.domain,
+      chain: state.order.routeId,
       bundle: state.order.bundleId,
+      payer: state.wallet.address,
     });
-    window.location.href = created.checkout_url;
+    state.receipt = created;
+    $("done-stamps").textContent = `${created.bundle_stamps} stamps · ${created.usdc} USDC`;
+    $("done-domain").textContent = `Send USDC to ${created.receiver}`;
+    $("review-dialog").close();
+    $("done-dialog").showModal();
   } catch (error) {
     showMessage("domain-error", error.message);
     $("review-dialog").close();
@@ -329,7 +362,7 @@ if (PRIVY_SETTINGS.appId) {
   document.querySelector(".preview-notice span").textContent =
     "Sign in with email, enter the domain you send from, then pay with a card. $10 minimum.";
   document.querySelector(".under-button").textContent = "Card checkout. No wallet. No crypto.";
-  $("browser-wallet-row").hidden = true;
+  $("browser-wallet-row").hidden = routeId() === "card";
   import("../privy/privy-entry.js").then(({ mountPrivy }) => {
     mountPrivy({
       appId: PRIVY_SETTINGS.appId, clientId: PRIVY_SETTINGS.clientId || undefined, container: root,
