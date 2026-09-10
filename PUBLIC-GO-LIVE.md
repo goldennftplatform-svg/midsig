@@ -1,16 +1,58 @@
-# Make MIDSIG reachable from the internet (3 steps, only you can do these)
+# Making MIDSIG reachable from the internet — CURRENT STATUS
 
-Everything on this machine is already wired and PROVEN local:
+**UPDATE (2026-09-09): this connection cannot host a public mailbox.**
+
+Diagnosis:
+- Gateway is **T-Mobile Home Internet** (lighttpd React app at 192.168.12.1).
+- The WAN IP (172.56.106.30) belongs to T-Mobile's carrier pool
+  (RDAP NET-172-32-0-0-1) — that is **CGNAT**, not a public IP you own.
+- External probes from 5 countries time out on ports 25/80/443/22.
+  That is the carrier blocking inbound, not a missing forward rule.
+- IPv6 addresses are handed out (2607:fb90:...) but the gateway firewall
+  blocks inbound and WSL2 NATs the guest anyway.
+
+So no firewall rule, router forward, or DNS change on this machine can
+create a public MX. The options below are the only real paths.
+
+---
+
+## OPTION A — The magic that already ships (works everywhere, no servers)
+
+    midsig setup --domain yours.example    # key + DNS record + wait
+    midsig demo                            # offline pass/fail proof
+    midsig sign --input msg.eml            # sign with your key
+    midsig verify --input msg.eml          # verify vs public DNS
+
+MIDSIG is a sender-identity stamp: anyone with your DNS can verify that a
+message came from your domain. It does NOT need your own mail server.
+
+## OPTION B — Public mailbox via a dumb VPS hop (~$1-5/mo)
+
+A tiny VPS with a public IP owns the MX. It does NOT make decisions —
+it pipe-forwards the SMTP dialogue over an OUTBOUND tunnel (SSH/WireGuard)
+to this WSL Postfix, which accepts/rejects (550/250) exactly as today.
+Even with a compromised VPS, the verdict logic and the key never leave
+home. Requires: one VPS, one outbound tunnel, aisp.live MX -> VPS IP.
+
+## OPTION C — A different line with a real public IP (ISP/plan change)
+
+A business line or any ISP that assigns a true public IPv4 (or accepts
+inbound 25). On any of those, the recipe below (firewall + forward + DNS)
+is all that's needed — it's already proven working locally.
+
+---
+
+## The original 3-step recipe (only valid with a real public IP)
+
+Everything on this machine is wired and PROVEN local:
   LAN 192.168.12.135:25 -> relay -> WSL Postfix -> milter -> 550/550/250.
-The relay also auto-starts at login (Startup folder) and wakes WSL on demand.
+The relay auto-starts at login and wakes WSL on demand.
 
 Test that first (works right now):
     py -3 scripts\lan-proof.py
     expect: [1 unsig] REJECT 550 / [2 spoof] REJECT 550 / [3 signed] ACCEPT 250
 
----
-
-## STEP 1 — Windows Firewall: allow inbound port 25 (one elevated command)
+### STEP 1 — Windows Firewall: allow inbound port 25 (one elevated command)
 
 Open PowerShell **as Administrator** and run:
 
@@ -61,3 +103,4 @@ Your ISP is likely carrier-NAT-ing or dropping inbound 25 (common on
 residential lines). Home-public works for some ISPs, not others. That is a
 physics problem the code can't fix — the fallback is a $1-5/mo relay VPS
 that only sees ciphertext and lets Postfix keep enforcing.
+> NOTE on firewall profile: this PC's active network is **Public** (SScupofjoe). Use profile=public (or profile=any) in the rule.
