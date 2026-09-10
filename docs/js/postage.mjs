@@ -9,9 +9,9 @@ const storageKey = "midsig.checkout.preferences.v1";
 const evmProviders = new Map();
 const state = { wallet: null, cleanup: null, attempt: 0, busy: false, order: null, receipt: null };
 let privySession = { authenticated: false, userId: null, accessToken: null };
-const API_BASE = (location.hostname === "midsig.aisp.live")
-  ? "http://159.223.184.36:8767"
-  : "";
+const API_BASE = (location.hostname === "mail.aisp.live")
+  ? ""
+  : "https://mail.aisp.live";
 const shortAddress = address => `${address.slice(0, 6)}…${address.slice(-4)}`;
 const bundleId = () => form.elements.bundle.value;
 const routeId = () => form.elements.route.value;
@@ -331,9 +331,9 @@ for (const dialog of document.querySelectorAll("dialog")) {
 }
 restorePreferences();
 render();
-$("page-status").textContent = location.protocol === "https:"
-  ? "Live checkout is at http://159.223.184.36:8767/postage.html (HTTPS pages cannot talk to the HTTP mail API)."
-  : "";
+$("page-status").textContent = location.hostname === "mail.aisp.live"
+  ? ""
+  : "Live checkout: https://mail.aisp.live/postage.html";
 
 // The independently built React island is loaded only when an operator has
 // supplied the public App ID. It does not enable payment or domain verification.
