@@ -75,7 +75,7 @@ X-Midsig: v=1; d=example.com; i=<abc@example.com>; t=1720600000; s=...'></textar
 </div>
 
 <script type="module">
-import { verify } from "js/ed25519.js";
+import { verify } from "./js/ed25519.js";
 
 const $ = (id) => document.getElementById(id);
 const utf8 = (s) => new TextEncoder().encode(s);
