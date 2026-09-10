@@ -51,6 +51,40 @@ function restorePreferences() {
   } catch { /* damaged or unavailable storage must not break checkout */ }
 }
 
+async function refreshAccount() {
+  const book = $("stamp-book");
+  const list = $("stamp-book-list");
+  if (!privySession.accessToken) {
+    book.hidden = true;
+    list.replaceChildren();
+    return;
+  }
+  try {
+    const me = await api("/me");
+    $("stamp-book-total").textContent = `${me.stamps || 0} stamps left`;
+    list.replaceChildren();
+    for (const account of me.accounts || []) {
+      if (String(account.domain).endsWith(".prepaid.midsig")) continue;
+      const line = document.createElement("li");
+      line.textContent = `${account.domain} · ${account.stamps} left${account.greenlit ? " · live" : ""}`;
+      list.append(line);
+    }
+    book.hidden = false;
+    const paid = new URLSearchParams(location.search).get("paid");
+    const orderId = new URLSearchParams(location.search).get("order");
+    if (paid && orderId) {
+      try {
+        const order = await api(`/order/${orderId}`);
+        $("page-status").textContent = order.status === "credited"
+          ? `${order.domain} is green-lit · ${order.stamps} stamps added`
+          : `Payment for ${order.domain} is ${order.status}. Stamps show once Square confirms.`;
+      } catch { /* keep book visible */ }
+    }
+  } catch {
+    book.hidden = true;
+  }
+}
+
 function render() {
   const bundle = bundleById(bundleId());
   $("art-count").textContent = bundle.stamps;
@@ -370,6 +404,8 @@ if (PRIVY_SETTINGS.appId) {
       onSession: session => {
         if (session.userId !== privySession.userId || session.authenticated !== privySession.authenticated) invalidateOrder();
         privySession = session;
+        refreshAccount();
+        render();
       },
     });
   }).catch(() => {

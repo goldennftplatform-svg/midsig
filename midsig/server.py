@@ -298,7 +298,33 @@ def inbox_list(recipient: str, user_id: str = Depends(current_user)):
 
 @app.get("/me")
 def me(user_id: str = Depends(current_user)):
-    return {"user_id": user_id, "accounts": get_ledger().accounts(user_id)}
+    accounts = []
+    total = 0
+    for row in get_ledger().accounts(user_id):
+        stamps = int(row["balance"]) // STAMP_UNITS
+        total += stamps
+        accounts.append({
+            "domain": row["domain"],
+            "stamps": stamps,
+            "balance": row["balance"],
+            "greenlit": row["public_key"] != "00" * 32,
+        })
+    return {"user_id": user_id, "stamps": total, "accounts": accounts}
+
+
+@app.get("/order/{order_id}")
+def get_order(order_id: str, user_id: str = Depends(current_user)):
+    try:
+        order = get_ledger().order(user_id, order_id)
+        return {
+            "order_id": order["id"],
+            "domain": order["domain"],
+            "stamps": order["stamps"],
+            "status": order["status"],
+            "chain": order["chain"],
+        }
+    except (Rejected, Conflict) as exc:
+        raise _http_error(exc)
 
 
 @app.post("/order/card")
