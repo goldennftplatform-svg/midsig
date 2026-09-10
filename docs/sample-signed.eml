@@ -1,0 +1,9 @@
+from: Presale Safe <presale@aisp.live>
+to: Bob <bob@receiver.org>
+subject: the first MIDSIG-verified message
+message-id: <first-midsig-mail@aisp.live>
+x-midsig: v=1; d=aisp.live; i=<first-midsig-mail@aisp.live>; t=1788995856; s=n7qVaDonuZXx6brzq1dpUIMttncKuq0K5TKJqa3ax3HBjgRPe489SxYEjQb8mllxZEH7yxvSLHCKxc0NZcecCQ==
+x-midsig-postage: v=1; n=000000000000e4ec; x=0000b0b88c8d04e3884e98e951c23e204481320e2eac2aea4b393dc266a98455; b=16
+
+This message was signed by the aisp.live domain key and carries a 16-bit postage stamp.
+Paste the whole thing into the verifier at midsig.aisp.live/verify.html to check it live.

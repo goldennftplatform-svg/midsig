@@ -3,6 +3,7 @@ __pycache__/
 *.pyo
 key.hex
 *.eml
+!docs/sample-signed.eml
 keygen.out
 .venv/
 venv/
