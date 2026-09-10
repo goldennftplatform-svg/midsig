@@ -231,7 +231,9 @@ def main(argv=None):
     p.add_argument("--smtp", required=True, help="relay hostname")
     p.add_argument("--port", type=int, default=465)
     p.add_argument("--user", required=True)
-    p.add_argument("--password", required=True)
+    cred = p.add_mutually_exclusive_group(required=True)
+    cred.add_argument("--password", help="SMTP password (avoid: shows in shell history)")
+    cred.add_argument("--password-file", help="read SMTP password from this file (preferred)")
     p.add_argument("--from", dest="sender", required=True)
     p.add_argument("--to", action="append", required=True)
     p.add_argument("--subject", default="")
@@ -239,6 +241,8 @@ def main(argv=None):
     p.add_argument("--body-file")
     p.add_argument("--postage-bits", type=int, default=0)
     p.add_argument("--starttls", action="store_true", help="use STARTTLS on port 587 instead of implicit TLS")
+    p.add_argument("--dry-run", action="store_true",
+                   help="connect, verify the TLS handshake and AUTH succeed, then quit WITHOUT sending mail")
     p.set_defaults(func=cmd_send)
 
     args = parser.parse_args(argv)
@@ -254,6 +258,23 @@ def cmd_send(args):
     domain = args.sender.rsplit("@", 1)[1].lower()
     message_id = f"<{uuid.uuid4().hex}@{domain}>"
     timestamp = int(time.time())
+
+    password = args.password
+    if args.password_file:
+        password = open(args.password_file, "r", encoding="utf-8").read().strip()
+
+    if args.dry_run:
+        if args.starttls:
+            client = smtplib.SMTP(args.smtp, args.port, timeout=30)
+            client.ehlo()
+            client.starttls()
+            client.ehlo()
+        else:
+            client = smtplib.SMTP_SSL(args.smtp, args.port, timeout=30)
+        client.login(args.user, password)
+        client.quit()
+        print(f"preflight OK: {args.user} authenticated to {args.smtp}:{args.port} (no mail sent)")
+        return
 
     body = args.body
     if args.body_file:
@@ -275,7 +296,7 @@ def cmd_send(args):
         client.starttls()
     else:
         client = smtplib.SMTP_SSL(args.smtp, args.port, timeout=30)
-    client.login(args.user, args.password)
+    client.login(args.user, password)
     client.sendmail(args.sender, args.to, signed.encode("utf-8"))
     client.quit()
     print(f"sent signed message {message_id} to {', '.join(args.to)}")

@@ -87,8 +87,10 @@ class TestSend(unittest.TestCase):
         args.port = sink.port
         args.user = "u"
         args.password = "p"
+        args.password_file = None
         args.postage_bits = 8
         args.starttls = False
+        args.dry_run = False
 
         keyfile = os.path.join(os.path.dirname(__file__), "tmp-send-key.hex")
         with open(keyfile, "w") as fh:
@@ -114,6 +116,53 @@ class TestSend(unittest.TestCase):
 
         verdict, _ = core.verify_eml(raw, lookup, required_bits=8)
         self.assertEqual(verdict, "pass")
+
+    def test_send_dry_run_authenticates_without_sending(self):
+        sink = SMTPSink()
+        seed = secrets.token_bytes(32)
+
+        from unittest import mock
+
+        import smtplib  # noqa: F401
+
+        from midsig.cli import cmd_send
+
+        class Args:
+            pass
+
+        args = Args()
+        args.sender = "alice@example.com"
+        args.to = ["bob@receiver.org"]
+        args.subject = "never sent"
+        args.body = ""
+        args.body_file = None
+        args.smtp = "127.0.0.1"
+        args.port = sink.port
+        args.user = "u"
+        args.password = None
+        args.password_file = "tmp-send-pass.txt"
+        args.postage_bits = 0
+        args.starttls = False
+        args.dry_run = True
+
+        keyfile = os.path.join(os.path.dirname(__file__), "tmp-send-key.hex")
+        with open(keyfile, "w") as fh:
+            fh.write(seed.hex())
+        args.key_file = keyfile
+
+        passfile = os.path.join(os.path.dirname(__file__), "tmp-send-pass.txt")
+        with open(passfile, "w") as fh:
+            fh.write("secret-app-password\n")
+        args.password_file = passfile
+
+        with mock.patch("smtplib.SMTP_SSL", smtplib.SMTP):
+            cmd_send(args)
+
+        sink.shutdown()
+        os.remove(keyfile)
+        os.remove(passfile)
+
+        self.assertEqual(len(sink.messages), 0, "dry-run must not deliver mail")
 
 
 if __name__ == "__main__":
