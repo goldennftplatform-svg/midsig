@@ -41,7 +41,7 @@ fi
 
 # ---------------------------------------------------------------- 2. spoofed
 printf '\n[2] spoofed From: mail claiming to be aisp.live\n'
-out=$(swaks --to "test@${HOST}" --from "presale@aisp.live" --header "Message-ID: <spoof-$$@aisp.live>" --server 127.0.0.1:25 2>&1)
+out=$(swaks --to "test@${HOST}" --from "preset@aisp.live" --header "Message-ID: <spoof-$$@aisp.live>" --server 127.0.0.1:25 2>&1)
 if printf '%s' "$out" | grep -qE "^<+\*\* 5(50|54)"; then
   ok "rejected: $(printf '%s' "$out" | grep -oE '5[0-9]{2} .*' | head -1)"
 else
@@ -53,13 +53,17 @@ fi
 if [ -n "$KEY_FILE" ] && [ -f "$KEY_FILE" ]; then
   printf '\n[3] signed mail from aisp.live (real key, real DNS)\n'
   python3 - "$KEY_FILE" > "$EML_FILE" <<'PYEOF'
-import sys
+import re, sys
 sys.path.insert(0, "/opt/midsig")
 from midsig import core
-seed = bytes.fromhex(open(sys.argv[1]).read().strip()[:64])
+raw = open(sys.argv[1]).read()
+m = re.search(r"([0-9a-fA-F]{64})", raw)
+if not m:
+    sys.exit(f"{sys.argv[1]}: no 64-char hex seed found")
+seed = bytes.fromhex(m.group(1))
 domain = "aisp.live"
 eml = (
-    "From: Presale Safe <presale@aisp.live>\r\n"
+    "From: Preset <preset@aisp.live>\r\n"
     "To: root@localhost\r\n"
     "Subject: midsig self-test signed mail\r\n"
     "Message-ID: <selftest-signed-1@aisp.live>\r\n"
@@ -68,7 +72,7 @@ eml = (
 )
 print(core.sign_eml(seed, eml, postage_bits=16))
 PYEOF
-  out=$(swaks --to "test@${HOST}" --from "presale@aisp.live" --data "@${EML_FILE}" --server 127.0.0.1:25 2>&1)
+  out=$(swaks --to "test@${HOST}" --from "preset@aisp.live" --data "@${EML_FILE}" --server 127.0.0.1:25 2>&1)
   rm -f "$EML_FILE"
   if printf '%s' "$out" | grep -qE "250 2\\.0\\.0 Ok"; then
     ok "accepted — MIDSIG pass end-to-end"
