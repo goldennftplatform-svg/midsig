@@ -103,6 +103,16 @@
   }
   .honest h3 { color: var(--accent2); font-family: var(--mono); font-size: 14px; margin-bottom: 10px; }
   .honest p { color: var(--dim); font-size: 14.5px; }
+  #musicbtn {
+    position: fixed; right: 20px; bottom: 20px; z-index: 50;
+    width: 42px; height: 42px; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--panel);
+    color: var(--dim); font-size: 17px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 14px rgba(0,0,0,.35); transition: color .2s, border-color .2s;
+  }
+  #musicbtn:hover { color: var(--accent); border-color: var(--accent); }
+  #musicbtn.playing { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -223,6 +233,29 @@ $ midsig verify --input mail.eml --required-bits 20
     <a href="https://github.com/goldennftplatform-svg/midsig/blob/master/LICENSE">MIT</a>
   </div>
 </footer>
+
+<audio id="bgmusic" src="audio/midsig-theme.mp3" loop preload="auto"></audio>
+<button id="musicbtn" title="background music">♪</button>
+
+<script>
+// Subtle background music — GEOFF Enters the Chat (Preset Records), 14% volume.
+const music = document.getElementById("bgmusic");
+const musicbtn = document.getElementById("musicbtn");
+music.volume = 0.14;
+let musicOn = false;
+musicbtn.addEventListener("click", () => {
+  musicOn = !musicOn;
+  if (musicOn) { music.play(); musicbtn.classList.add("playing"); musicbtn.textContent = "♪"; }
+  else { music.pause(); musicbtn.classList.remove("playing"); musicbtn.textContent = "♪"; }
+});
+// Browsers block autoplay-with-sound; first click anywhere starts it quietly.
+document.addEventListener("click", function once() {
+  if (!musicOn && !music.paused) return;
+  if (!musicOn) {
+    music.play().then(() => { musicbtn.classList.add("playing"); }).catch(() => {});
+  }
+}, { once: true });
+</script>
 
 <script>
 // Compact SHA-256 (public domain style implementation)

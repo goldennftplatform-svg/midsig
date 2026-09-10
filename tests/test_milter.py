@@ -33,19 +33,35 @@ def _stub_lookup(seed):
 
 
 class FakeMTA:
-    """Speaks the MTA side of the milter protocol against a running server."""
+    """Speaks the MTA side of the milter protocol against a running server.
 
-    def __init__(self, address):
+    Default wire format is Postfix's ([u32 len][cmd][payload]); set
+    sendmail_style=True for libmilter's ([cmd][u32 len][payload]).
+    """
+
+    def __init__(self, address, sendmail_style=False):
         self.sock = socket.create_connection(address, timeout=10)
+        self.sendmail_style = sendmail_style
 
     def _send(self, cmd, payload=b""):
-        self.sock.sendall(cmd.encode() + struct.pack("!I", len(payload)) + payload)
+        if self.sendmail_style:
+            frame = cmd.encode() + struct.pack("!I", len(payload)) + payload
+        else:
+            # postfix: length counts cmd byte + data
+            frame = struct.pack("!I", 1 + len(payload)) + cmd.encode() + payload
+        self.sock.sendall(frame)
 
     def _recv(self):
-        head = self._read(5)
-        cmd = head[:1].decode()
-        length = struct.unpack("!I", head[1:])[0]
-        payload = self._read(length) if length else b""
+        if self.sendmail_style:
+            head = self._read(5)
+            cmd = head[:1].decode()
+            length = struct.unpack("!I", head[1:])[0]
+            payload = self._read(length) if length else b""
+        else:
+            length = struct.unpack("!I", self._read(4))[0]
+            body = self._read(length)
+            cmd = body[:1].decode()
+            payload = body[1:]
         return cmd, payload
 
     def _read(self, n):
@@ -83,9 +99,9 @@ class FakeMTA:
 
 
 class _ServerThread(threading.Thread):
-    def __init__(self, handler):
+    def __init__(self, handler, style="postfix"):
         super().__init__(daemon=True)
-        self.server = milter.MilterServer("inet:127.0.0.1:0", lambda: handler)
+        self.server = milter.MilterServer("inet:127.0.0.1:0", lambda: handler, style=style)
 
     def run(self):
         self.server.serve_forever()
@@ -212,6 +228,26 @@ class TestSignMilter(unittest.TestCase):
         srv.server.shutdown()
         self.assertEqual([c for c, _ in replies][-1], "a")
         self.assertFalse(any(c == "m" for c, _ in replies))
+
+
+class TestSendmailWireFormat(unittest.TestCase):
+    """libmilter-style [cmd][len][data] framing still works when requested."""
+
+    def test_sendmail_style_verifies(self):
+        seed = secrets.token_bytes(32)
+        srv = _ServerThread(
+            handlers.VerifyHandler(lookup=_stub_lookup(seed), action="reject"),
+            style="sendmail",
+        )
+        srv.start()
+        mta = FakeMTA(srv.address, sendmail_style=True)
+        mta.negotiate()
+        eml = core.sign_eml(seed, SAMPLE_EML)
+        headers = [(n, v) for n, v in core._header_map(core._split(eml)[0])[1]]
+        replies = mta.deliver(headers)
+        mta.close()
+        srv.server.shutdown()
+        self.assertEqual([c for c, _ in replies][-1], "a")
 
 
 class TestHandlerDirect(unittest.TestCase):

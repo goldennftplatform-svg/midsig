@@ -48,11 +48,19 @@ def _read_exact(conn, n):
 
 
 class MilterSession:
-    """One SMTP transaction through the milter protocol."""
+    """One SMTP transaction through the milter protocol.
 
-    def __init__(self, conn, handler):
+    Two wire formats exist in the wild:
+      - "postfix":  [u32 length][1-byte command][payload]  (Postfix's milter)
+      - "sendmail": [1-byte command][u32 length][payload]  (libmilter / Sendmail)
+    Postfix is the default (verified against a live Postfix); Sendmail's format
+    is kept for compatibility via style="sendmail".
+    """
+
+    def __init__(self, conn, handler, style="postfix"):
         self.conn = conn
         self.handler = handler
+        self.style = style
         self.headers = []
         self.client_host = ""
         self.client_addr = ""
@@ -60,13 +68,26 @@ class MilterSession:
     # ------------------------------------------------------------- transport
 
     def _send(self, cmd, payload=b""):
-        self.conn.sendall(_pack(cmd, payload))
+        if self.style == "postfix":
+            # Postfix frames: [u32 length][cmd][data], where length counts
+            # the command byte plus the data bytes.
+            self.conn.sendall(
+                struct.pack("!I", 1 + len(payload)) + cmd.encode("ascii") + payload
+            )
+        else:
+            self.conn.sendall(cmd.encode("ascii") + struct.pack("!I", len(payload)) + payload)
 
     def _recv(self):
-        head = _read_exact(self.conn, 5)
-        cmd = head[:1].decode("ascii")
-        length = struct.unpack("!I", head[1:])[0]
-        payload = _read_exact(self.conn, length) if length else b""
+        if self.style == "postfix":
+            length = struct.unpack("!I", _read_exact(self.conn, 4))[0]
+            body = _read_exact(self.conn, length)
+            cmd = body[:1].decode("ascii")
+            payload = body[1:]
+        else:
+            head = _read_exact(self.conn, 5)
+            cmd = head[:1].decode("ascii")
+            length = struct.unpack("!I", head[1:])[0]
+            payload = _read_exact(self.conn, length) if length else b""
         return cmd, payload
 
     # ------------------------------------------------------------- protocol
@@ -181,18 +202,20 @@ def _listener(path):
 
 class MilterServer:
     """Threaded milter server. `handler_factory` returns a fresh handler per
-    connection (handlers carry per-connection state like collected headers)."""
+    connection (handlers carry per-connection state like collected headers).
+    `style` selects the wire format: "postfix" (default) or "sendmail"."""
 
-    def __init__(self, path, handler_factory):
+    def __init__(self, path, handler_factory, style="postfix"):
         self.path = path
         self.handler_factory = handler_factory
+        self.style = style
         self._stop = threading.Event()
         self.sock, self.address = _listener(path)
 
     def serve_forever(self):
         while not self._stop.is_set():
             conn, _ = self.sock.accept()
-            session = MilterSession(conn, self.handler_factory())
+            session = MilterSession(conn, self.handler_factory(), style=self.style)
             t = threading.Thread(target=session.run, daemon=True)
             t.start()
 

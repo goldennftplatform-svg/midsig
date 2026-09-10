@@ -23,6 +23,7 @@ cp -r "$REPO_DIR/midsig" /opt/midsig/midsig
 echo "==> configuring midsigd (verify mode, hard reject)"
 mkdir -p /var/run/midsigd
 useradd --system --home-dir /var/lib/midsig --shell /usr/sbin/nologin midsig || true
+chown midsig:midsig /var/run/midsigd
 
 cat > /etc/midsigd.conf <<EOF
 [milter]
@@ -61,6 +62,7 @@ echo "test@${HOST} root" > /etc/postfix/virtual
 postmap /etc/postfix/virtual
 
 echo "==> wiring rspamd"
+mkdir -p /etc/rspamd/lua/local /etc/rspamd/local.d
 cp "$REPO_DIR/rspamd/lua/midsig.lua" /etc/rspamd/lua/local/midsig.lua
 cp "$REPO_DIR/rspamd/conf/midsig.conf" /etc/rspamd/local.d/midsig.conf
 if [ ! -f /etc/rspamd/local.d/groups.conf ]; then
