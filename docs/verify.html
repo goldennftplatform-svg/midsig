@@ -158,7 +158,8 @@ $("sample").addEventListener("click", async () => {
 
 async function run() {
   const steps = [];
-  const add = (label, detail) => steps.push(`<div><b>${label}</b> — ${detail}</div>`);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const add = (label, detail) => steps.push(`<div><b>${esc(label)}</b> — ${esc(detail)}</div>`);
   const eml = $("eml").value;
   const requiredBits = parseInt($("bits").value || "0", 10);
   $("result").classList.add("show");
