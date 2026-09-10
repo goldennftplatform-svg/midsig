@@ -152,6 +152,25 @@ class Ledger:
                 )
         return self.account(domain, user_id)
 
+    def claim_domain(self, user_id, domain, public_key_hex=None, now=None):
+        """Green-light a sending domain for this user. First claim wins."""
+        now = int(time.time()) if now is None else now
+        domain = domain_name(domain)
+        key = public_key_hex or ("00" * 32)
+        with self.transaction() as db:
+            row = db.execute("SELECT * FROM accounts WHERE domain=?", (domain,)).fetchone()
+            if row and row["user_id"] != user_id:
+                raise Conflict("This domain is already green-lit by another account")
+            if row:
+                if public_key_hex and row["public_key"] == "00" * 32:
+                    db.execute("UPDATE accounts SET public_key=? WHERE domain=?", (key, domain))
+            else:
+                db.execute(
+                    "INSERT INTO accounts(domain,user_id,public_key,created) VALUES (?,?,?,?)",
+                    (domain, user_id, key, now),
+                )
+        return self.account(domain, user_id)
+
     def create_order(self, user_id, domain, chain, payer, bundle, now=None):
         now = int(time.time()) if now is None else now
         domain = domain_name(domain)

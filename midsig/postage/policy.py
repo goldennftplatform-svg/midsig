@@ -39,6 +39,12 @@ def domain_name(value):
     if not isinstance(value, str) or len(value) > 253:
         raise Rejected("Invalid domain")
     value = value.strip().rstrip(".").lower()
+    if "://" in value:
+        host = value.split("://", 1)[1].split("/")[0].split("?")[0]
+        value = host
+    if "@" in value:
+        value = value.rsplit("@", 1)[1]
+    value = value.strip().rstrip(".").lower()
     try:
         value = value.encode("idna").decode("ascii")
     except UnicodeError as exc:

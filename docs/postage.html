@@ -70,9 +70,9 @@
           </details>
 
           <div class="domain-field">
-            <label for="sending-domain"><span class="step">3</span> Sending domain <span class="optional-label">OPTIONAL</span></label>
-            <div class="domain-input-wrap"><span aria-hidden="true">@</span><input id="sending-domain" name="domain" type="text" placeholder="skip for now" maxlength="253" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="domain-help domain-error"></div>
-            <p id="domain-help" class="field-help">Not needed to pay. Add it later if you send from your own domain.</p>
+            <label for="sending-domain"><span class="step">3</span> Sending domain <span class="optional-label">REQUIRED</span></label>
+            <div class="domain-input-wrap"><span aria-hidden="true">@</span><input id="sending-domain" name="domain" type="text" placeholder="yourdomain.com" maxlength="253" autocomplete="off" autocapitalize="none" spellcheck="false" required aria-describedby="domain-help domain-error"></div>
+            <p id="domain-help" class="field-help">Paying green-lights this From domain. Example: aisp.live</p>
             <p id="domain-error" class="error" role="alert" hidden></p>
           </div>
 

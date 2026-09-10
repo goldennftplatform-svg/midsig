@@ -306,25 +306,19 @@ def order_card(body: CardOrderBody, user_id: str = Depends(current_user)):
     try:
         if body.bundle not in CARD_CENTS:
             raise Rejected("Card checkout starts at $10")
+        if not (body.domain or "").strip():
+            raise Rejected("A sending domain is required")
         db = get_ledger()
-        domain = None
-        if body.domain and body.domain.strip():
-            try:
-                candidate = domain_name(body.domain)
-                try:
-                    db.account(candidate, user_id)
-                    domain = candidate
-                except Rejected:
-                    records = query_txt(f"_midsig.{candidate}")
-                    pub = _pubkey_from_txt(records)
-                    if pub is not None:
-                        enrollment = db.enrollment(user_id, candidate)
-                        db.activate_domain(enrollment, pub)
-                        domain = candidate
-            except (Rejected, DnsUnavailable):
-                domain = None
-        if domain is None:
-            domain = db.ensure_prepaid(user_id)["domain"]
+        domain = domain_name(body.domain)
+        pub_hex = None
+        try:
+            records = query_txt(f"_midsig.{domain}")
+            pub = _pubkey_from_txt(records)
+            if pub is not None:
+                pub_hex = pub.hex()
+        except DnsUnavailable:
+            pub_hex = None
+        db.claim_domain(user_id, domain, pub_hex)
         order = db.create_order(user_id, domain, "square", "square:card", body.bundle)
         redirect = "https://mail.aisp.live/postage.html?paid=1&order=" + order["id"]
         link = squarepay.create_payment_link(order, redirect)
