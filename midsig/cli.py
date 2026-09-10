@@ -124,6 +124,19 @@ def cmd_publish(args):
     print(f"_midsig.{args.domain}. 300 IN TXT \"{record}\"")
 
 
+def cmd_export_pub(args):
+    """Write just the public key record to a file — share this, never the seed."""
+    seed = _load_seed(args.key_file)
+    pub = ed25519.public_key(seed)
+    record = f'v=midsig1; k=ed25519; p={base64.b64encode(pub).decode()}'
+    if args.output:
+        with open(args.output, "w", encoding="utf-8", newline="") as fh:
+            fh.write(record + "\n")
+        print(f"wrote {args.output}")
+    else:
+        print(record)
+
+
 def cmd_sign(args):
     seed = _load_seed(args.key_file)
     eml = _read_eml(args.input)
@@ -136,13 +149,27 @@ def cmd_sign(args):
         sys.stdout.write(out)
 
 
+def _lookup(args, domain):
+    if args.key_file:
+        seed = _load_seed(args.key_file)
+        pub = ed25519.public_key(seed)
+        return [f"v=midsig1; k=ed25519; p={base64.b64encode(pub).decode()}"]
+    if args.pubkey:
+        return [args.pubkey]
+    return dns.query_txt(f"{core.TXT_PREFIX}.{domain}", server=args.dns_server)
+
+
 def cmd_verify(args):
     eml = _read_eml(args.input)
-    verdict, reasons = core.verify_eml(
-        eml, lookup=lambda d: dns.query_txt(f"{core.TXT_PREFIX}.{d}", server=args.dns_server),
-        required_bits=args.required_bits,
-    )
-    print(f"verdict: {verdict}")
+    try:
+        verdict, reasons = core.verify_eml(
+            eml, lookup=lambda d: _lookup(args, d),
+            required_bits=args.required_bits,
+        )
+    except SystemExit:
+        raise
+    source = "key file" if args.key_file else ("pubkey" if args.pubkey else "DNS")
+    print(f"verdict: {verdict}   (keys from {source})")
     for reason in reasons:
         print(f"  - {reason}")
     if verdict != "pass":
@@ -173,6 +200,11 @@ def main(argv=None):
     p.add_argument("--key-file", required=True)
     p.set_defaults(func=cmd_publish)
 
+    p = sub.add_parser("export-pub", help="write the public key record to a file (share this, never the seed)")
+    p.add_argument("--key-file", required=True)
+    p.add_argument("--output")
+    p.set_defaults(func=cmd_export_pub)
+
     p = sub.add_parser("sign", help="sign an .eml file")
     p.add_argument("--key-file", required=True)
     p.add_argument("--input", required=True)
@@ -181,10 +213,12 @@ def main(argv=None):
                    help="attach a proof-of-work stamp with N leading zero bits")
     p.set_defaults(func=cmd_sign)
 
-    p = sub.add_parser("verify", help="verify an .eml file against DNS")
+    p = sub.add_parser("verify", help="verify an .eml against DNS (or a key file)")
     p.add_argument("--input", required=True)
     p.add_argument("--required-bits", type=int, default=0,
                    help="require postage of at least N bits")
+    p.add_argument("--key-file", help="verify against this saved key instead of DNS (no internet needed)")
+    p.add_argument("--pubkey", help="verify against this public record string instead of DNS (no internet, no secret)")
     p.add_argument("--dns-server", default=dns.DEFAULT_SERVER)
     p.set_defaults(func=cmd_verify)
 
