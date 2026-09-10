@@ -211,10 +211,18 @@ class MilterServer:
         self.style = style
         self._stop = threading.Event()
         self.sock, self.address = _listener(path)
+        self.sock.settimeout(0.5)
 
     def serve_forever(self):
         while not self._stop.is_set():
-            conn, _ = self.sock.accept()
+            try:
+                conn, _ = self.sock.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                if self._stop.is_set():
+                    return
+                raise
             session = MilterSession(conn, self.handler_factory(), style=self.style)
             t = threading.Thread(target=session.run, daemon=True)
             t.start()

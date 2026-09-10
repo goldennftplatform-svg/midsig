@@ -120,14 +120,15 @@
 <header>
   <div class="wrap">
     <div class="logo">MIDSIG</div>
-    <h1>Domain-signed Message-IDs.<br>Email spoofing, <em>cryptographically dead.</em></h1>
+    <h1>Domain-signed Message-IDs.<br>Email identity, <em>cryptographically bound.</em></h1>
     <p class="sub">
-      SPF checks the envelope. DKIM checks the relay. MIDSIG binds the message itself to a
-      domain key published in DNS — a forged From address fails a signature, not a heuristic.
-      Plus optional postage: if you can't afford 5 cents of compute, I don't want your mail.
+      SPF checks sending authorization. DKIM authenticates signed message content. MIDSIG adds
+      an explicit domain-key binding for the Message-ID. Prepaid blockchain postage is in
+      development: prove your domain, then pay 0.05 USDC per message per recipient.
     </p>
     <div class="cta">
       <a class="btn btn-primary" href="verify.html">Verify a message live</a>
+      <a class="btn btn-primary" href="postage.html">Preview the postage checkout</a>
       <a class="btn btn-ghost" href="#demo">Try the postage demo</a>
       <a class="btn btn-ghost" href="https://github.com/goldennftplatform-svg/midsig">View on GitHub</a>
       <a class="btn btn-ghost" href="https://github.com/goldennftplatform-svg/midsig/blob/master/SPEC.md">Read the spec</a>
@@ -173,12 +174,12 @@ $ midsig verify --input mail.eml --required-bits 20
       <tr><th>Attack</th><th>SPF</th><th>DKIM</th><th>MIDSIG</th></tr>
       <tr><td>Forged From domain (phishing)</td><td class="risk">partial</td><td class="risk">partial</td><td class="pass">rejected</td></tr>
       <tr><td>Stripped / unverified signing</td><td class="risk">ignorable</td><td class="risk">ignorable</td><td class="pass">quarantined</td></tr>
-      <tr><td>Mass spam from burner domains</td><td class="risk">weak</td><td class="risk">weak</td><td class="pass">priced out</td></tr>
-      <tr><td>Message-ID impersonation / thread-jacking</td><td class="risk">no</td><td class="risk">no</td><td class="pass">bound</td></tr>
+      <tr><td>Mass spam from burner domains</td><td>no price requirement</td><td>no price requirement</td><td>optional work; payments in development</td></tr>
+      <tr><td>Message-ID integrity</td><td>not covered</td><td>when included in signed headers</td><td class="pass">explicitly bound</td></tr>
     </table>
     <p class="lead" style="margin-top:20px">
-      SPF and DKIM stay. MIDSIG adds the one binding they both leave unsigned — the message identity —
-      and gives receivers a <em>pricing knob</em> for their inbox.
+      SPF and DKIM stay. MIDSIG explicitly requires a signed Message-ID binding to the From domain.
+      Version 1 adds optional computational work; monetary inbox pricing is a separate integration.
     </p>
   </div>
 </section>
@@ -188,7 +189,8 @@ $ midsig verify --input mail.eml --required-bits 20
     <h2><span class="n">03</span>Live postage demo</h2>
     <p class="lead">
       Real proof-of-work, minted in your browser, no server involved. Raise the bits and watch the
-      compute cost climb — this is the "5 cents" dial.
+      compute cost climb. This legacy demo measures work, not money; it does not purchase stamps
+      or establish a five-cent cost. <a href="postage.html" style="color:var(--accent)">Preview prepaid postage →</a>
     </p>
     <div class="demo">
       <label for="domain">FROM DOMAIN</label>
@@ -216,9 +218,9 @@ $ midsig verify --input mail.eml --required-bits 20
       <p>
         Hashcash (1997) invented PoW postage for email. Penny Black (2003) and Camram (2004) tried to
         make it mainstream. DKIM (2007) proved domain-key signing works at internet scale. MIDSIG is the
-        narrow slice DKIM leaves unsigned — the Message-ID binding — plus a modern pricing knob. And no,
-        the spoofing fix doesn't need a blockchain: DNS + signatures do it deterministically. A
-        blockchain only earns its keep here as the <em>payment rail</em> for real postage later.
+        explicit domain-to-Message-ID binding plus receiver policy. DKIM can also sign Message-ID;
+        MIDSIG makes that binding an explicit requirement. DNS-published signatures establish the
+        domain-key relationship, while blockchain settlement is the planned <em>payment rail</em>.
         The hard part was never crypto. It's convincing receiving domains to enforce it — which is why
         this is designed for incremental, unilateral adoption.
       </p>

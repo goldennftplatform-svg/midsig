@@ -123,6 +123,11 @@ class TestVerifyMilter(unittest.TestCase):
         )
         cls.server.start()
 
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.server.shutdown()
+        cls.server.join(timeout=2)
+
     def _signed_headers(self):
         eml = core.sign_eml(self.seed, SAMPLE_EML)
         return [(n, v) for n, v in core._header_map(core._split(eml)[0])[1]]
@@ -263,6 +268,32 @@ class TestHandlerDirect(unittest.TestCase):
         action, added = handler.on_eom(headers)
         self.assertEqual(action, "t")
         self.assertTrue(any(b"midsig=temperror" in v.encode() for n, v in added))
+
+
+class TestMilterShutdown(unittest.TestCase):
+    def test_listener_stops_cleanly_after_a_connection(self):
+        server = milter.MilterServer(
+            "inet:127.0.0.1:0", lambda: handlers.VerifyHandler(lookup=lambda _: [])
+        )
+        errors = []
+
+        def run():
+            try:
+                server.serve_forever()
+            except Exception as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        try:
+            mta = FakeMTA(server.address)
+            mta.negotiate()
+            mta.close()
+        finally:
+            server.shutdown()
+            thread.join(timeout=2)
+        self.assertFalse(thread.is_alive(), "listener remained blocked after shutdown")
+        self.assertEqual(errors, [], "closing the listener leaked a thread exception")
 
 
 if __name__ == "__main__":

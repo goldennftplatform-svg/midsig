@@ -8,7 +8,7 @@ not heuristically. SPF/DKIM stay as-is; MIDSIG adds a domain-key binding that no
 relay in the path can strip without detection.
 
 Optional postage: a proof-of-work token under `X-Midsig-Postage` lets receivers
-price inbound mail ("if you can't afford 5 cents of compute, I don't want it").
+require computational work. It does not prove payment or a fixed dollar cost.
 The token binds to the same (domain, Message-ID, timestamp) triple. The PoW
 flavor is self-contained; the spec leaves room for paid tokens (Lightning
 invoice / cheap-L2 payment embedded in the header) behind the same verifier
@@ -183,8 +183,6 @@ def verify_eml(eml: str, lookup, required_bits: int = 0):
     raw_headers, _ = _split(eml)
     headers, _order = _header_map(raw_headers)
 
-    reasons = []
-
     domain = _from_domain(headers)
     if not domain:
         return "error", ["no parseable From header"]
@@ -205,7 +203,7 @@ def verify_eml(eml: str, lookup, required_bits: int = 0):
         return "fail", ["malformed X-Midsig header"]
 
     if _first(headers, "message-id") != message_id:
-        reasons.append("X-Midsig i= does not match Message-ID header")
+        return "fail", ["X-Midsig i= does not match Message-ID header"]
 
     try:
         timestamp = int(ts_field)
@@ -230,10 +228,6 @@ def verify_eml(eml: str, lookup, required_bits: int = 0):
 
     if not ed25519.verify(pub, payload(domain, message_id, timestamp), sig):
         return "fail", ["signature verification failed"]
-
-    # Message-ID binding is part of the signature; a mismatch already fails
-    # above — the earlier note is informational only.
-    reasons = [r for r in reasons if not r.startswith("X-Midsig i=")]
 
     if required_bits > 0 or _first(headers, "x-midsig-postage"):
         postage_value = _first(headers, "x-midsig-postage")

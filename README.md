@@ -1,11 +1,14 @@
 # midsig
 
-Email is the internet's oldest open protocol, and the From line still trusts
-anyone. We fixed that.
+MIDSIG signs the Message-ID with your domain's key, published in DNS. Receivers
+can require that signature to verify against the From domain's published key.
+Version 1 also supports proof-of-work, which is not a payment or a fixed dollar
+cost. It complements SPF, DKIM, and DMARC; it does not replace them.
 
-MIDSIG signs the Message-ID with your domain's key, published in DNS. A forged
-From is now a failed signature, not a guess. Spam gets a price tag: prove 5
-cents of compute or I don't want your mail.
+The new prepaid-postage checkout is a **no-funds preview**: 20 / 100 / 500 stamps
+for 1 / 5 / 25 USDC, with a Privy integration for Base and Solana wallets. The payment
+verifier, domain-bound credit ledger, and paid SMTP admission are not implemented.
+See [payment status](docs/PAYMENTS.md) and [Privy setup](docs/PRIVY-SETUP.md).
 
 Everything here is MIT. Your keys, your inbox.
 
@@ -33,10 +36,10 @@ in DNS, not from any directory or server.
 
 ## It ships live
 
-`preset@aisp.live` is a real mailbox. Signed mail sent from it is accepted by
-Gmail with `spf=pass`, `dmarc=pass`, `arc=pass`, `From:` intact — and every
-copy verifies `pass (keys from DNS)` against the live `_midsig.aisp.live`
-record. That was the send path that Gmail's own relay could never deliver
+`preset@aisp.live` is a real mailbox. A signed test sent from it was accepted by
+Gmail with `spf=pass`, `dmarc=pass`, `arc=pass`, and `From:` intact. The delivered
+copy verified `pass (keys from DNS)` against the live `_midsig.aisp.live` record.
+The tested Gmail relay configuration rewrote that identity instead
 (see [docs/sending.md](docs/sending.md) for the full proof and setup).
 
 ## Proof without internet (throwaway key)
@@ -78,11 +81,20 @@ writes). `--pubkey` takes the exact TXT record content (public only).
   browser against live DNS (via DoH). Ships a real sample at
   `.../sample-signed.eml` that verifies `pass`.
 - `.../` — landing page with the story and a postage demo.
+- `.../postage.html` — prepaid checkout preview and optional Privy login. No
+  payment or usable credit is created by previewing a purchase.
+
+GitHub Actions builds the pinned Privy SDK from `checkout-auth/` into
+`docs/privy/` before deploying the Pages artifact. `docs/release.json` identifies
+the deployed commit and purchase mode. SDK build output and secrets are not
+committed; only the public Privy App ID belongs in browser configuration.
 
 ## Tests
 
 ```bash
-python -m unittest discover -s tests -v        # 25 python tests
+python -m unittest discover -s tests -v        # 27 python tests
+node --test tests/test_postage_model.mjs       # checkout money/domain/receipt tests
+node tests/ed25519-vectors.mjs                 # RFC 8032 verification vectors
 cd tests && npm install && npm run test:lua    # Lua module runtime tests
 npm run test:syntax                            # luaparse syntax check
 ```
@@ -95,14 +107,15 @@ npm run test:syntax                            # luaparse syntax check
 | `midsigd` | milter daemon — hard enforcement on Postfix/Sendmail |
 | `rspamd/lua/midsig.lua` | Lua module — enforcement on any rspamd host |
 | `docs/` | site: live verifier (client-side DoH), postage demo |
+| `checkout-auth/` | TypeScript-checked Privy login island, built into the Pages artifact |
 | `scripts/` | lan-proof, magic-proof, mailserver self-test, WAN relay, provisioners |
 
 ## Sending signed mail, for real
 
 The reference `preset@aisp.live` mailbox sends through Zoho
 (`smtp.zoho.com:587`, STARTTLS). The relay keeps `From:` intact — which is the
-whole point, and the reason the Gmail relay path was dropped (it rewrites
-`From:` and therefore can never carry a MIDSIG-verifiable message).
+whole point, and the reason the tested consumer Gmail relay path was dropped:
+that configuration rewrote `From:` to a domain whose signing key we don't control.
 
 Recipe, full detail, and the live proof: **[docs/sending.md](docs/sending.md)**.
 

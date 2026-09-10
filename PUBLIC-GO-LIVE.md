@@ -1,4 +1,37 @@
-# Making MIDSIG reachable from the internet — CURRENT STATUS
+# MIDSIG release and mail-routing status
+
+## Current status (2026-09-10)
+
+- Website: `https://midsig.aisp.live`. The release adds `postage.html`, a no-funds
+  prepaid checkout preview with real Privy login integration. It does not sell
+  usable stamps yet. GitHub Actions builds the SDK and deploys the Pages artifact.
+- Mailbox: **preset@aisp.live**, hosted by Zoho. Public DNS still routes to
+  `mx.zoho.com` / `mx2.zoho.com` / `mx3.zoho.com` at priorities 10 / 20 / 50.
+  The Zoho DKIM record is published. See [sending proof](docs/sending.md).
+- Test gateway: Postfix and MIDSIG were installed on the DigitalOcean droplet.
+  Local SMTP self-tests returned unsigned 550, spoofed 550, signed 250 with
+  `required_bits=16`. A separate external probe reached its SMTP banner. These
+  facts do not prove a public paid-message delivery path.
+- Forwarding to Zoho failed: outbound SMTP connections timed out on ports 25,
+  465, and 587 while HTTPS worked. DigitalOcean's [documented restriction](https://docs.digitalocean.com/support/why-is-smtp-blocked/)
+  covers those SMTP ports. Support suggested a third-party delivery service;
+  no exception was approved. An alternate relay still needs validation.
+- **Paid inbox enforcement is not deployed.** The existing milter checks
+  signatures and optional computational work, not blockchain payment. The
+  payment verifier, domain-bound ledger, and durable paid delivery are required
+  before enabling purchases or changing MX. See [payment policy](docs/PAYMENTS.md).
+
+Any future gateway must have a tested mailbox-delivery path before MX cutover.
+Keeping unrestricted hosted MX records as backups would let senders bypass the
+mandatory gate. Authenticated outbound submission services must be evaluated
+for forwarding arbitrary external senders; preserving our own sender in a test
+does not establish general forwarding compatibility.
+
+## Historical home-hosting investigation
+
+The material below records the earlier home-network experiment. **Do not apply
+its home-IP DNS recipe to aisp.live**: that path was ruled out by CGNAT. It is
+not the current mailbox configuration or a prerequisite for website deployment.
 
 **UPDATE (2026-09-09): this connection cannot host a public mailbox.**
 

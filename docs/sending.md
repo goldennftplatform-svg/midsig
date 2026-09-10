@@ -1,92 +1,70 @@
-# Sending MIDSIG-signed mail through Gmail (or any SMTP relay)
+# Sending MIDSIG-signed mail through Zoho
 
-`midsig send` signs a message with your domain key, then hands it to an
-SMTP relay for delivery. Gmail's relay is the common choice; any relay that
-accepts AUTH works the same way.
+The tested reference mailbox is **preset@aisp.live**. It sends through
+`smtp.zoho.com:587` using STARTTLS and its full email address as the SMTP login.
+The sending machine must be able to reach the relay; the DigitalOcean test
+droplet currently cannot because of the provider's SMTP egress restriction.
 
-## The one hard rule
+## Keep the signing identity intact
 
-MIDSIG verification resolves `_midsig.<From-domain>` in public DNS. The
-**From address must live on a domain whose key you published** — otherwise
-receivers see `fail — domain publishes no key`.
+Verification resolves `_midsig.<From-domain>` in public DNS. Publish the domain's
+Ed25519 key and use a relay that preserves both the From domain and Message-ID.
+Successful SMTP authentication alone does not guarantee this behavior.
 
-- `From: presale@aisp.live`  -> verifies (key is live in DNS). Correct sender.
-- `From: nick@presetnet.com`  -> verifies once you publish its key (record below).
-- `From: goldennftplatform@gmail.com` -> **cannot ever verify**. Nobody can
-  publish `_midsig.gmail.com`. Gmail can only be the *transport*, never the
-  signing identity.
+The tested consumer Gmail relay configuration rewrote the From address to a
+Gmail identity. We cannot publish a key under gmail.com, so that delivered copy
+failed MIDSIG verification. Zoho preserved the reference domain in our test.
+This is evidence about the tested configurations, not a claim about every
+possible Gmail/Workspace send-as configuration.
 
-So you authenticate to Gmail SMTP with your Gmail account, but the `From:`
-must be your own domain address.
+## Keep passwords and private keys outside the repository
 
-## Gmail SMTP requirements
+Save the Zoho SMTP app password in a private file and pass `--password-file`.
+Do not paste secrets into command arguments, documentation, or browser code.
+Use your own SMTP account, domain, and private paths in these examples.
 
-- **2-Step Verification (2FA) must be ON** for the Gmail account. This is a
-  hard Google requirement — `smtp.gmail.com` no longer accepts password
-  logins, only App Passwords (which require 2FA) or OAuth.
-- Create an **App Password** (not your site password):
-  `myaccount.google.com/apppasswords`
-- smtp.gmail.com, port **587**, `--starttls`. (Port 465 implicit TLS also
-  accepted.)
+The following commands are single-line commands suitable for PowerShell or a
+POSIX shell when Python is available as `python`:
 
-## Never put the App Password on the command line
-
-Shell history (and process listings) would record it. Store it in a file
-outside the repo and use `--password-file`:
-
-```
-notepad.exe C:\Users\PreSafu\Desktop\CC\keys\gmail-app.txt
+```sh
+python -m midsig.cli send --key-file "../keys/aisp.live.hex.txt" --smtp smtp.zoho.com --port 587 --starttls --user preset@aisp.live --password-file "../keys/zoho-smtp.txt" --from preset@aisp.live --to preset@aisp.live --dry-run
 ```
 
-(one line: the 16-char App Password, no quotes). The `keys\` folder is
-private and never committed.
+Expected preflight: `authenticated to smtp.zoho.com:587 (no mail sent)`.
 
-## Preflight before you send
+To send a signed message to a recipient you control:
 
-Prove credentials, TLS, and auth work without delivering a single message:
-
-```
-py -3 -m midsig.cli send \
-  --key-file C:\Users\PreSafu\Desktop\CC\keys\aisp.live.hex.txt \
-  --smtp smtp.gmail.com --port 587 --starttls \
-  --user goldennftplatform@gmail.com \
-  --password-file C:\Users\PreSafu\Desktop\CC\keys\gmail-app.txt \
-  --from presale@aisp.live --to me@example.com \
-  --dry-run
+```sh
+python -m midsig.cli send --key-file "../keys/aisp.live.hex.txt" --smtp smtp.zoho.com --port 587 --starttls --user preset@aisp.live --password-file "../keys/zoho-smtp.txt" --from preset@aisp.live --to recipient@example.com --subject "MIDSIG over Zoho" --body "Signed by aisp.live; verify the delivered copy against DNS."
 ```
 
-Expect: `preflight OK: ... authenticated to smtp.gmail.com:587 (no mail sent)`.
+Optionally add `--postage-bits 16` for the **legacy proof-of-work** stamp. This
+does not pay 0.05 USDC or buy stamps. Monetary postage is a separate, unfinished
+integration: see [PAYMENTS.md](PAYMENTS.md).
 
-## Actually send (signed + postage)
+## Verify the delivered copy
 
-```
-py -3 -m midsig.cli send \
-  --key-file C:\Users\PreSafu\Desktop\CC\keys\aisp.live.hex.txt \
-  --smtp smtp.gmail.com --port 587 --starttls \
-  --user goldennftplatform@gmail.com \
-  --password-file C:\Users\PreSafu\Desktop\CC\keys\gmail-app.txt \
-  --from presale@aisp.live --to recipient@example.com \
-  --subject "first MIDSIG mail via Gmail" \
-  --body "signed by aisp.live, verified against live DNS" \
-  --postage-bits 16
+Download the raw message from the recipient's mailbox, then run:
+
+```sh
+python -m midsig.cli verify --input delivered.eml
 ```
 
-Default is `--port 465` implicit SSL; add `--starttls` for 587.
+Or use <https://midsig.aisp.live/verify.html>. A locally signed copy alone does
+not prove that a relay preserved the fields during delivery.
 
-## A signed message can't be forged
+The reference test delivered from Zoho to Gmail with the From domain intact;
+Gmail's headers reported SPF, DMARC, and ARC pass, and the downloaded message
+verified `pass (keys from DNS)`. Zoho's DKIM TXT record was subsequently
+confirmed in DNS; publishing that record alone is not evidence of DKIM pass on
+this earlier delivered message. A new delivered-header test is required for
+that claim. IMAP was unavailable on the tested Zoho plan; use webmail's raw
+message download if your account has the same restriction.
 
-Every send stamps `X-Midsig` (domain, Message-ID, timestamp, signature). A
-third party copying the headers cannot re-issue them under their own
-identity, and tampering with headers invalidates the signature. Site:
-`https://midsig.aisp.live/verify.html`.
+## Scope of a version-1 pass
 
-## Publishing a key for a second domain (e.g. nick@presetnet.com)
-
-```
-py -3 -m midsig.cli setup --domain presetnet.com \
-  --key-file C:\Users\PreSafu\Desktop\CC\keys\presetnet.com.hex.txt
-```
-
-Then add the printed `_midsig.presetnet.com TXT` record at your DNS host
-(GoDaddy DNS panel). Until the record resolves, mail from that domain can't
-verify.
+MIDSIG v1 signs the From **domain**, Message-ID, and timestamp. It does not sign
+all headers, the body, or recipients; it does not establish the individual
+mailbox owner's identity or prevent all replays. DKIM and other checks remain
+important. The proposed paid protocol requires content/recipient binding and
+a persistent admission ledger before payment-backed sending can go live.

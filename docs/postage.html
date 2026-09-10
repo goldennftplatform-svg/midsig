@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Preview MIDSIG prepaid email postage. Pick a bundle, choose Base or Solana, and review. Real payments are not yet enabled.">
+  <meta name="color-scheme" content="dark">
+  <title>Buy postage — MIDSIG checkout preview</title>
+  <link rel="icon" href="postage-icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="postage.css">
+  <script type="module" src="js/postage.mjs"></script>
+</head>
+<body>
+  <a class="skip" href="#checkout">Skip to checkout</a>
+  <div class="shell">
+    <header class="topbar">
+      <a class="wordmark" href="index.html" aria-label="MIDSIG home"><span class="brand-icon" aria-hidden="true">m<span>↗</span></span> MIDSIG<span class="wordmark-extra"> / POST OFFICE</span></a>
+      <span class="mode"><span aria-hidden="true"></span> CHECKOUT PREVIEW</span>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="heading">
+        <div class="eyebrow">A LITTLE POSTAGE. A BETTER INBOX.</div>
+        <h1 id="heading">Good mail.<br><span>Small change.</span></h1>
+        <p class="lede">A nickel of intention behind every message.<br>Pick up some stamps. Get back to saying something.</p>
+
+        <div class="stamp-scene" aria-hidden="true">
+          <div class="stamp-shadow"></div>
+          <div class="stamp-paper">
+            <div class="stamp-top"><span>MIDSIG POST</span><span>05¢</span></div>
+            <div class="envelope-art"><div class="envelope-flap"></div><span>↗</span></div>
+            <div class="stamp-count"><strong id="art-count">20</strong><span>GOOD INTENTIONS<br>PER BOOKLET</span></div>
+            <div class="stamp-bottom"><span>DOMAIN SIGNED</span><span>✳</span><span>POSTAGE PAID*</span></div>
+          </div>
+          <div class="postmark"><span>PROOF OF INTENT</span><strong>MIDSIG</strong><span>PREVIEW · NO VALUE</span></div>
+          <div class="stamp-caption">*Illustration. Preview stamps have no value.</div>
+        </div>
+
+        <div class="perks"><span><b>01</b> Buy a bundle</span><span><b>02</b> Sign your mail</span><span><b>03</b> Make it count</span></div>
+        <p class="unit-note">Planned price: <strong>0.05 USDC</strong> per message, per recipient.<br>Sender-domain verification is required before paid sending.</p>
+      </section>
+
+      <section class="checkout-panel" id="checkout" aria-labelledby="checkout-heading">
+        <div class="panel-heading"><div><span class="eyebrow">YOUR NEXT HELLO STARTS HERE</span><h2 id="checkout-heading">Pick your postage.</h2></div><span class="little-envelope" aria-hidden="true">↗</span></div>
+        <div class="preview-notice"><strong>Try the checkout. Keep your coins.</strong><span>Payments and usable stamps aren't enabled yet. This preview never requests a signature or sends money.</span></div>
+        <noscript><p class="error">This preview needs JavaScript. No payment can be made from this page.</p></noscript>
+
+        <form id="postage-form" novalidate>
+          <fieldset class="bundle-fieldset">
+            <legend><span class="step">1</span> Your stamp book</legend>
+            <div class="bundles">
+              <label class="bundle"><input type="radio" name="bundle" value="starter" checked><span class="bundle-content"><span class="bundle-tag">START HERE</span><strong>20<span>stamps</span></strong><span class="bundle-price">1 USDC</span><span class="bundle-desc">A little hello</span></span></label>
+              <label class="bundle"><input type="radio" name="bundle" value="regular"><span class="bundle-content"><span class="bundle-tag">KEEP IN TOUCH</span><strong>100<span>stamps</span></strong><span class="bundle-price">5 USDC</span><span class="bundle-desc">Your regular stack</span></span></label>
+              <label class="bundle"><input type="radio" name="bundle" value="stack"><span class="bundle-content"><span class="bundle-tag">STOCK UP</span><strong>500<span>stamps</span></strong><span class="bundle-price">25 USDC</span><span class="bundle-desc">Say a little more</span></span></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="route-fieldset">
+            <legend><span class="step">2</span> Your payment route</legend>
+            <div class="routes">
+              <label class="route"><input type="radio" name="route" value="base" checked><span class="route-content"><span class="coin base-coin" aria-hidden="true">−</span><span><strong>USDC</strong><small>on Base</small></span><span class="radio-dot" aria-hidden="true"></span></span></label>
+              <label class="route"><input type="radio" name="route" value="solana"><span class="route-content"><span class="coin sol-coin" aria-hidden="true">≋</span><span><strong>USDC</strong><small>on Solana</small></span><span class="radio-dot" aria-hidden="true"></span></span></label>
+            </div>
+            <p class="route-note">Have ETH or SOL instead? <span>Native-coin swaps are planned.</span> Pond0x integration is not yet verified.</p>
+          </fieldset>
+
+          <div class="domain-field">
+            <label for="sending-domain"><span class="step">3</span> Your sending domain <span class="optional-label">ONE-TIME SETUP</span></label>
+            <div class="domain-input-wrap"><span aria-hidden="true">@</span><input id="sending-domain" name="domain" type="text" placeholder="yourdomain.com" maxlength="253" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="domain-help domain-error"></div>
+            <p id="domain-help" class="field-help">The domain you send from. Entering it here doesn't verify ownership.</p>
+            <p id="domain-error" class="error" role="alert" hidden></p>
+          </div>
+
+          <div class="order-summary" aria-label="Order summary">
+            <div><span id="summary-stamps">20 stamps</span><strong id="summary-amount">1.00 USDC</strong></div>
+            <div class="muted"><span>Network / swap fees</span><span>Quoted when live</span></div>
+            <div class="preview-due"><span>Due in this preview</span><strong>Nothing. Zero funds.</strong></div>
+          </div>
+
+          <div class="wallet-row" id="browser-wallet-row"><span id="wallet-status">No wallet needed to try it</span><button type="button" class="text-button" id="connect-wallet">Connect wallet <span aria-hidden="true">↗</span></button></div>
+          <div id="privy-auth-root" hidden></div>
+          <p id="wallet-notice" class="field-help" role="status" hidden></p>
+          <button class="primary-button" id="checkout-button" type="submit" disabled><span id="checkout-button-label">Preview 20 stamps</span><span aria-hidden="true">↗</span></button>
+          <p class="under-button">No signature. No payment. No surprise approvals.</p>
+        </form>
+        <p id="page-status" class="status" role="status" aria-live="polite">Loading checkout…</p>
+      </section>
+    </main>
+
+    <section class="details-section" aria-label="About postage">
+      <details><summary>What does one stamp cover?<span aria-hidden="true">+</span></summary><p>One authenticated message to one envelope recipient. A message to three recipients uses three stamps. The planned price is 0.05 USDC per stamp, with no bundle discount that weakens the minimum. The payment ledger and paid SMTP enforcement are still being built.</p></details>
+      <details><summary>Why buy a book instead of one stamp?<span aria-hidden="true">+</span></summary><p>One deposit can fund many messages, spreading transaction costs across your postage. Once implemented, the gateway will debit credits automatically when accepting a valid signed message. You won't need to approve a wallet transaction for every email.</p></details>
+      <details><summary>Where will payments go?<span aria-hidden="true">+</span></summary><div class="destination-list"><p>These are the proposed public receiving wallets. Direct transfers are not purchases and won't create stamps. Wait for verified live checkout.</p><strong>Base · USDC</strong><code>0x47cf60BdD877203264921D05CE26F81f6d36Aa3E</code><strong>Solana · USDC token-account owner</strong><code>5S9tyrZwcgV127fEQMzCaBNWmEKz3iUBdASKaurBSGHU</code><p>The verifier will accept only the official native USDC token for the selected network. <a href="PAYMENTS.md">Read the payment integration status →</a></p></div></details>
+    </section>
+    <footer><a class="footer-brand" href="index.html">MIDSIG<span> · A little proof goes a long way.</span></a><div><a href="verify.html">Verify a message</a><a href="https://github.com/goldennftplatform-svg/midsig">Source ↗</a></div></footer>
+  </div>
+
+  <dialog id="wallet-dialog" aria-labelledby="wallet-title" aria-describedby="wallet-description">
+    <button class="close-dialog" type="button" data-close="wallet-dialog" aria-label="Close wallet selection">×</button>
+    <span class="eyebrow">OPTIONAL · READ-ONLY CONNECTION</span>
+    <h2 id="wallet-title">Bring your wallet.</h2>
+    <p id="wallet-description">Connection shares your public address with this page. This preview cannot request signatures or transactions.</p>
+    <div id="wallet-options" class="wallet-options"></div>
+    <p id="wallet-error" class="error" role="alert" hidden></p>
+    <button type="button" class="secondary-button" id="skip-wallet">Continue without a wallet</button>
+  </dialog>
+
+  <dialog id="review-dialog" aria-labelledby="review-title" aria-describedby="review-description">
+    <button class="close-dialog" type="button" data-close="review-dialog" aria-label="Close review">×</button>
+    <span class="eyebrow">CHECKOUT PREVIEW · NO FUNDS</span>
+    <h2 id="review-title">One last look.</h2>
+    <p id="review-description">Here's the purchase you'd approve when payment verification and postage credits are live.</p>
+    <dl class="review-list"><div><dt>Sending domain</dt><dd id="review-domain"></dd></div><div><dt>Stamp book</dt><dd id="review-stamps"></dd></div><div><dt>Payment route</dt><dd id="review-route"></dd></div><div><dt>Postage value</dt><dd id="review-amount"></dd></div><div><dt>Network fees</dt><dd>Not quoted in preview</dd></div><div><dt>Funds requested now</dt><dd>0 — preview only</dd></div></dl>
+    <p class="field-help">Your domain hasn't been verified. No wallet authorization will be requested.</p>
+    <button class="primary-button" id="finish-preview" type="button"><span>Finish preview</span><span aria-hidden="true">↗</span></button>
+  </dialog>
+
+  <dialog id="done-dialog" aria-labelledby="done-title" aria-describedby="done-description">
+    <button class="close-dialog" type="button" data-close="done-dialog" aria-label="Close completed preview">×</button>
+    <span class="done-icon" aria-hidden="true">✓</span><span class="eyebrow">PREVIEW COMPLETE</span>
+    <h2 id="done-title">That's the whole idea.</h2>
+    <p id="done-description">Pick. Review. Back to your day.</p>
+    <div class="done-summary"><strong id="done-stamps"></strong><span id="done-domain"></span><small>No money moved. No usable stamps were created.</small></div>
+    <button class="primary-button" id="download-preview" type="button"><span>Save preview summary</span><span aria-hidden="true">↓</span></button>
+    <button class="secondary-button" type="button" data-close="done-dialog">Back to postage</button>
+  </dialog>
+</body>
+</html>

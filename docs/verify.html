@@ -176,6 +176,10 @@ async function run() {
   const f = parseFields(midsig);
   add("header", `d=${f.d}, i=${f.i}, t=${f.t}`);
 
+  if (!f.i || map["message-id"]?.length !== 1 || map["message-id"][0] !== f.i) {
+    return finish(false, "fail — Message-ID does not match signed identity", steps);
+  }
+
   if ((f.d || "").toLowerCase() !== domain) {
     add("domain", `X-Midsig d=${f.d} ≠ From domain ${domain}`);
     return finish(false, "fail — domain mismatch", steps);

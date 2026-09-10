@@ -9,3 +9,8 @@ keygen.out
 venv/
 tests/node_modules/
 tests/package-lock.json
+checkout-auth/node_modules/
+docs/privy/
+.env
+.env.*
+!.env.example

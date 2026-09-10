@@ -261,7 +261,8 @@ def cmd_send(args):
 
     password = args.password
     if args.password_file:
-        password = open(args.password_file, "r", encoding="utf-8").read().strip()
+        with open(args.password_file, "r", encoding="utf-8") as fh:
+            password = fh.read().strip()
 
     if args.dry_run:
         if args.starttls:

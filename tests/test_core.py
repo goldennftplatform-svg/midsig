@@ -56,6 +56,19 @@ class TestMidsig(unittest.TestCase):
         verdict, _ = core.verify_eml(spoofed, _fake_lookup(self.seed))
         self.assertEqual(verdict, "fail")
 
+    def test_message_id_header_must_match_signed_identity(self):
+        signed = core.sign_eml(self.seed, SAMPLE_EML, postage_bits=8)
+        original = "message-id: <abc123@example.com>\r\n"
+        for replacement in ("message-id: <evil@example.com>\r\n", ""):
+            with self.subTest(replacement=replacement):
+                tampered = signed.replace(original, replacement, 1)
+                self.assertNotEqual(tampered, signed)
+                verdict, reasons = core.verify_eml(
+                    tampered, _fake_lookup(self.seed), required_bits=8
+                )
+                self.assertEqual(verdict, "fail")
+                self.assertIn("X-Midsig i= does not match Message-ID header", reasons)
+
     def test_domain_mismatch_fails(self):
         signed = core.sign_eml(self.seed, SAMPLE_EML)
         swapped = signed.replace("d=example.com", "d=bank.com")

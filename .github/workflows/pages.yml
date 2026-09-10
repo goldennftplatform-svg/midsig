@@ -1,0 +1,60 @@
+name: Publish MIDSIG website
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: checkout-auth/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test signature and checkout logic
+        run: |
+          python -m unittest discover -s tests -p 'test_*.py'
+          node --test tests/test_postage_model.mjs
+          node tests/ed25519-vectors.mjs
+      - name: Install the locked Privy SDK build
+        working-directory: checkout-auth
+        run: npm ci
+      - name: Check high-severity dependency advisories
+        working-directory: checkout-auth
+        run: npm audit --omit=dev --audit-level=high
+      - name: Build the Privy login module
+        working-directory: checkout-auth
+        run: npm run build
+      - name: Include release identity
+        run: printf '{"commit":"%s","purchase_mode":"preview"}\n' "$GITHUB_SHA" > docs/release.json
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy the built website
+        id: deployment
+        uses: actions/deploy-pages@v4
