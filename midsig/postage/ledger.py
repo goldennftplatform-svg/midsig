@@ -10,6 +10,10 @@ import time
 from .policy import BUNDLES, STAMP_UNITS, Conflict, Rejected, domain_name, payer_address
 
 
+def prepaid_domain(user_id):
+    return hashlib.sha256(user_id.encode()).hexdigest()[:16] + ".prepaid.midsig"
+
+
 class Ledger:
     def __init__(self, path):
         self.path = str(path)
@@ -125,7 +129,28 @@ class Ledger:
             else:
                 db.execute("INSERT INTO accounts(domain,user_id,public_key,created) VALUES (?,?,?,?)", (challenge["domain"], challenge["user_id"], key, now))
             db.execute("UPDATE enrollments SET used=1 WHERE id=?", (challenge["id"],))
+            prepaid = prepaid_domain(challenge["user_id"])
+            if prepaid != challenge["domain"]:
+                held = db.execute("SELECT balance FROM accounts WHERE domain=? AND user_id=?", (prepaid, challenge["user_id"])).fetchone()
+                if held and held["balance"] > 0:
+                    db.execute("UPDATE accounts SET balance=balance+? WHERE domain=?", (held["balance"], challenge["domain"]))
+                    db.execute("UPDATE accounts SET balance=0 WHERE domain=?", (prepaid,))
+                    db.execute("INSERT INTO entries(domain,delta,kind,reference,created) VALUES (?,?,?,?,?)", (challenge["domain"], held["balance"], "deposit", "prepaid:" + prepaid + ":" + str(now), now))
         return self.account(enrollment["domain"], enrollment["user_id"])
+
+    def ensure_prepaid(self, user_id, now=None):
+        now = int(time.time()) if now is None else now
+        domain = prepaid_domain(user_id)
+        with self.transaction() as db:
+            row = db.execute("SELECT * FROM accounts WHERE domain=?", (domain,)).fetchone()
+            if row and row["user_id"] != user_id:
+                raise Conflict("Prepaid account conflict")
+            if not row:
+                db.execute(
+                    "INSERT INTO accounts(domain,user_id,public_key,created) VALUES (?,?,?,?)",
+                    (domain, user_id, "00" * 32, now),
+                )
+        return self.account(domain, user_id)
 
     def create_order(self, user_id, domain, chain, payer, bundle, now=None):
         now = int(time.time()) if now is None else now

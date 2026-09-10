@@ -154,7 +154,7 @@ class CreditBody(BaseModel):
 
 
 class CardOrderBody(BaseModel):
-    domain: str
+    domain: str = ""
     bundle: str
 
 
@@ -307,16 +307,24 @@ def order_card(body: CardOrderBody, user_id: str = Depends(current_user)):
         if body.bundle not in CARD_CENTS:
             raise Rejected("Card checkout starts at $10")
         db = get_ledger()
-        domain = domain_name(body.domain)
-        try:
-            db.account(domain, user_id)
-        except Rejected:
-            records = query_txt(f"_midsig.{domain}")
-            pub = _pubkey_from_txt(records)
-            if pub is None:
-                raise Rejected("Publish a _midsig DNS record for this domain first")
-            enrollment = db.enrollment(user_id, domain)
-            db.activate_domain(enrollment, pub)
+        domain = None
+        if body.domain and body.domain.strip():
+            try:
+                candidate = domain_name(body.domain)
+                try:
+                    db.account(candidate, user_id)
+                    domain = candidate
+                except Rejected:
+                    records = query_txt(f"_midsig.{candidate}")
+                    pub = _pubkey_from_txt(records)
+                    if pub is not None:
+                        enrollment = db.enrollment(user_id, candidate)
+                        db.activate_domain(enrollment, pub)
+                        domain = candidate
+            except (Rejected, DnsUnavailable):
+                domain = None
+        if domain is None:
+            domain = db.ensure_prepaid(user_id)["domain"]
         order = db.create_order(user_id, domain, "square", "square:card", body.bundle)
         redirect = "https://mail.aisp.live/postage.html?paid=1&order=" + order["id"]
         link = squarepay.create_payment_link(order, redirect)

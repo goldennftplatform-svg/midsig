@@ -251,8 +251,18 @@ $("sending-domain").addEventListener("input", () => {
 form.addEventListener("submit", event => {
   event.preventDefault();
   let order;
-  try { order = selection(bundleId(), routeId(), $("sending-domain").value); }
-  catch (error) {
+  try {
+    if (routeId() === "card" && !$("sending-domain").value.trim()) {
+      const bundle = bundleById(bundleId());
+      order = {
+        bundleId: bundle.id, routeId: "card", domain: "", stamps: bundle.stamps,
+        units: BigInt(bundle.stamps) * STAMP_UNITS, usdc: formatUsdc(BigInt(bundle.stamps) * STAMP_UNITS),
+        route: routeById("card"),
+      };
+    } else {
+      order = selection(bundleId(), routeId(), $("sending-domain").value);
+    }
+  } catch (error) {
     showMessage("domain-error", error.message);
     $("sending-domain").setAttribute("aria-invalid", "true");
     $("sending-domain").focus();
@@ -264,7 +274,7 @@ form.addEventListener("submit", event => {
   savePreferences();
   state.order = order;
   state.receipt = null;
-  $("review-domain").textContent = `${order.domain} · not verified`;
+  $("review-domain").textContent = order.domain || "Stamps held on your account";
   $("review-stamps").textContent = `${order.stamps} stamps`;
   $("review-route").textContent = order.route.label;
   $("review-amount").textContent = `$${(order.stamps * 5 / 100).toFixed(2)}`;
