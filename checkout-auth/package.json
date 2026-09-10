@@ -13,6 +13,7 @@
     "@solana-program/system": "0.14.1",
     "@solana-program/token": "0.16.1",
     "@solana/kit": "8.3.0",
+    "date-fns": "4.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "viem": "2.56.3"
