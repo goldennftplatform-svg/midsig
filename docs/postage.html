@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Buy MIDSIG email postage with a card. $10 minimum. No crypto required.">
   <meta name="color-scheme" content="dark">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://challenges.cloudflare.com 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; child-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org; frame-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org https://challenges.cloudflare.com; connect-src 'self' https://auth.privy.io wss://relay.walletconnect.com wss://relay.walletconnect.org wss://www.walletlink.org https://*.rpc.privy.systems https://explorer-api.walletconnect.com https://mainnet.base.org https://api.mainnet-beta.solana.com http://159.223.184.36:8767 https://mail.aisp.live https://midsig.aisp.live; worker-src 'self'; manifest-src 'self'">
-  <title>Buy postage — MIDSIG checkout preview</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://challenges.cloudflare.com 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; child-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org; frame-src https://auth.privy.io https://verify.walletconnect.com https://verify.walletconnect.org https://challenges.cloudflare.com; connect-src 'self' https://auth.privy.io wss://relay.walletconnect.com wss://relay.walletconnect.org wss://www.walletlink.org https://*.rpc.privy.systems https://explorer-api.walletconnect.com https://mainnet.base.org http://159.223.184.36:8767 https://mail.aisp.live https://midsig.aisp.live; worker-src 'self'; manifest-src 'self'">
+  <title>Buy postage — MIDSIG</title>
   <link rel="icon" href="postage-icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="postage.css">
   <script type="module" src="js/postage.mjs"></script>
@@ -33,8 +33,8 @@
             <div class="stamp-count"><strong id="art-count">20</strong><span>GOOD INTENTIONS<br>PER BOOKLET</span></div>
             <div class="stamp-bottom"><span>DOMAIN SIGNED</span><span>✳</span><span>POSTAGE PAID*</span></div>
           </div>
-          <div class="postmark"><span>PROOF OF INTENT</span><strong>MIDSIG</strong><span>PREVIEW · NO VALUE</span></div>
-          <div class="stamp-caption">*Illustration. Preview stamps have no value.</div>
+          <div class="postmark"><span>PROOF OF POSTAGE</span><strong>MIDSIG</strong><span>CRYPTOGRAPHIC MAIL</span></div>
+          <div class="stamp-caption">Cryptographic postage · $0.05 per recipient.</div>
         </div>
 
         <div class="perks"><span><b>01</b> Buy a bundle</span><span><b>02</b> Sign your mail</span><span><b>03</b> Make it count</span></div>
@@ -44,7 +44,7 @@
       <section class="checkout-panel" id="checkout" aria-labelledby="checkout-heading">
         <div class="panel-heading"><div><span class="eyebrow">YOUR NEXT HELLO STARTS HERE</span><h2 id="checkout-heading">Pick your postage.</h2></div><span class="little-envelope" aria-hidden="true">↗</span></div>
         <div class="preview-notice"><strong>Pay with a card. Send better mail.</strong><span>Sign in, enter your sending domain, pay $10 or $25. Stamps are added automatically.</span></div>
-        <noscript><p class="error">This preview needs JavaScript. No payment can be made from this page.</p></noscript>
+        <noscript><p class="error">JavaScript is required to create and settle a postage order.</p></noscript>
 
         <form id="postage-form" novalidate>
           <fieldset class="bundle-fieldset">
@@ -63,9 +63,8 @@
               <legend>USDC</legend>
               <div class="routes">
                 <label class="route"><input type="radio" name="crypto-route" value="base"><span class="route-content"><span class="coin base-coin" aria-hidden="true">−</span><span><strong>USDC</strong><small>on Base</small></span><span class="radio-dot" aria-hidden="true"></span></span></label>
-                <label class="route"><input type="radio" name="crypto-route" value="solana"><span class="route-content"><span class="coin sol-coin" aria-hidden="true">≋</span><span><strong>USDC</strong><small>on Solana</small></span><span class="radio-dot" aria-hidden="true"></span></span></label>
               </div>
-              <p class="route-note">Same stamp books. You send USDC yourself. Solana credit is not live yet.</p>
+              <p class="route-note">Native USDC settles directly on Base and is verified before postage is credited.</p>
             </fieldset>
           </details>
 
@@ -89,7 +88,7 @@
             <ul id="stamp-book-list" class="field-help"></ul>
           </div>
           <p id="wallet-notice" class="field-help" role="status" hidden></p>
-          <button class="primary-button" id="checkout-button" type="submit" disabled><span id="checkout-button-label">Preview 20 stamps</span><span aria-hidden="true">↗</span></button>
+          <button class="primary-button" id="checkout-button" type="submit" disabled><span id="checkout-button-label">Buy 20 stamps</span><span aria-hidden="true">↗</span></button>
           <p class="under-button">No signature. No payment. No surprise approvals.</p>
         </form>
         <p id="page-status" class="status" role="status" aria-live="polite">Loading checkout…</p>
@@ -99,16 +98,259 @@
     <section class="details-section" aria-label="About postage">
       <details><summary>What does one stamp cover?<span aria-hidden="true">+</span></summary><p>One authenticated message to one envelope recipient. A message to three recipients uses three stamps. The planned price is 0.05 USDC per stamp, with no bundle discount that weakens the minimum. The payment ledger and paid SMTP enforcement are still being built.</p></details>
       <details><summary>Why buy a book instead of one stamp?<span aria-hidden="true">+</span></summary><p>One deposit can fund many messages, spreading transaction costs across your postage. Once implemented, the gateway will debit credits automatically when accepting a valid signed message. You won't need to approve a wallet transaction for every email.</p></details>
-      <details><summary>Where will payments go?<span aria-hidden="true">+</span></summary><div class="destination-list"><p>These are the proposed public receiving wallets. Direct transfers are not purchases and won't create stamps. Wait for verified live checkout.</p><strong>Base · USDC</strong><code>0x47cf60BdD877203264921D05CE26F81f6d36Aa3E</code><strong>Solana · USDC token-account owner</strong><code>5S9tyrZwcgV127fEQMzCaBNWmEKz3iUBdASKaurBSGHU</code><p>The verifier will accept only the official native USDC token for the selected network. <a href="PAYMENTS.md">Read the payment integration status →</a></p></div></details>
+      <details><summary>Where do payments go?<span aria-hidden="true">+</span></summary><div class="destination-list"><p>MidSig keeps fiat and crypto settlement separate. Card payments are processed in dollars through Square. Native USDC payments settle directly on Base.</p><strong>Base · Native USDC</strong><code>0x47cf60BdD877203264921D05CE26F81f6d36Aa3E</code><p>Direct wallet transfers are not postage purchases unless they are attached to a MidSig order. Card-payment receipts are hashed locally, batched into a Merkle commitment, and anchored to Base without publishing card details on-chain. <a href="PAYMENTS.md">Read the payment architecture →</a></p></div></details>
     </section>
+
+    <section id="proof" class="proof-section" aria-labelledby="proof-title">
+      <style>
+        .proof-section{
+          margin:5rem 0 4rem;
+          padding:clamp(1.5rem,4vw,3.5rem);
+          border:1px solid rgba(255,255,255,.14);
+          border-radius:28px;
+          background:
+            radial-gradient(circle at 85% 10%,rgba(78,255,176,.09),transparent 34%),
+            linear-gradient(145deg,rgba(255,255,255,.045),rgba(255,255,255,.012));
+          position:relative;
+          overflow:hidden
+        }
+        .proof-section:before{
+          content:"";
+          position:absolute;
+          inset:0;
+          pointer-events:none;
+          background:linear-gradient(115deg,transparent 0 68%,rgba(255,255,255,.025) 68% 69%,transparent 69%)
+        }
+        .proof-live{
+          display:inline-flex;
+          align-items:center;
+          gap:.55rem;
+          font-size:.72rem;
+          letter-spacing:.14em;
+          font-weight:800;
+          text-transform:uppercase;
+          margin-bottom:1.25rem
+        }
+        .proof-live:before{
+          content:"";
+          width:.55rem;
+          height:.55rem;
+          border-radius:50%;
+          background:#56f39a;
+          box-shadow:0 0 18px #56f39a
+        }
+        .proof-section h2{
+          max-width:850px;
+          margin:.15rem 0 1rem;
+          font-size:clamp(2.25rem,6vw,5.4rem);
+          line-height:.93;
+          letter-spacing:-.055em
+        }
+        .proof-lead{
+          max-width:780px;
+          font-size:clamp(1rem,2vw,1.25rem);
+          line-height:1.6;
+          opacity:.78
+        }
+        .proof-grid{
+          display:grid;
+          grid-template-columns:repeat(2,minmax(0,1fr));
+          gap:1rem;
+          margin:2.5rem 0
+        }
+        .proof-card{
+          padding:1.35rem;
+          border:1px solid rgba(255,255,255,.11);
+          border-radius:18px;
+          background:rgba(0,0,0,.16)
+        }
+        .proof-card strong{
+          display:block;
+          margin-bottom:.45rem;
+          font-size:1.05rem
+        }
+        .proof-card p{
+          margin:0;
+          line-height:1.55;
+          opacity:.7
+        }
+        .proof-flow{
+          display:flex;
+          align-items:center;
+          flex-wrap:wrap;
+          gap:.6rem;
+          margin:2.25rem 0;
+          font-size:.78rem;
+          font-weight:750;
+          letter-spacing:.06em;
+          text-transform:uppercase
+        }
+        .proof-flow span{
+          padding:.7rem .85rem;
+          border:1px solid rgba(255,255,255,.13);
+          border-radius:999px
+        }
+        .proof-flow b{opacity:.35}
+        .chain-proof{
+          margin-top:2.5rem;
+          padding:1.35rem;
+          border-radius:18px;
+          border:1px solid rgba(86,243,154,.25);
+          background:rgba(86,243,154,.035)
+        }
+        .chain-proof-head{
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:1rem;
+          margin-bottom:1rem
+        }
+        .chain-proof-head strong{
+          font-size:.78rem;
+          letter-spacing:.12em;
+          text-transform:uppercase
+        }
+        .chain-proof-head span{
+          font-size:.75rem;
+          opacity:.55
+        }
+        .chain-row{
+          display:grid;
+          grid-template-columns:130px 1fr;
+          gap:1rem;
+          align-items:start;
+          padding:.75rem 0;
+          border-top:1px solid rgba(255,255,255,.075)
+        }
+        .chain-row:first-of-type{border-top:0}
+        .chain-row label{
+          font-size:.72rem;
+          letter-spacing:.1em;
+          text-transform:uppercase;
+          opacity:.5
+        }
+        .chain-row code{
+          overflow-wrap:anywhere;
+          word-break:break-all;
+          font-size:.78rem
+        }
+        .chain-row a{
+          color:inherit;
+          text-decoration:none
+        }
+        .chain-row a:hover{text-decoration:underline}
+        .manifesto{
+          margin-top:3.2rem;
+          font-size:clamp(1.6rem,4vw,3.3rem);
+          line-height:1;
+          letter-spacing:-.04em;
+          font-weight:800
+        }
+        .manifesto span{opacity:.4}
+        @media(max-width:720px){
+          .proof-grid{grid-template-columns:1fr}
+          .chain-row{grid-template-columns:1fr;gap:.35rem}
+        }
+      </style>
+
+      <div class="proof-live">LIVE · PROVEN ON BASE</div>
+      <h2 id="proof-title">Email postage with a cryptographic receipt.</h2>
+
+      <p class="proof-lead">
+        MidSig is no longer a payment mockup. The production gateway signs the message,
+        binds the actual SMTP recipients and message content, charges postage, and can
+        independently anchor fiat-settlement receipts to Base.
+      </p>
+
+      <div class="proof-grid">
+        <article class="proof-card">
+          <strong>Domain-bound identity</strong>
+          <p>
+            An Ed25519 MidSig key published by the sending domain proves which domain
+            authorized the message instead of trusting the visible From line alone.
+          </p>
+        </article>
+
+        <article class="proof-card">
+          <strong>Content + recipient binding</strong>
+          <p>
+            MidSig v2 commits to the message body and SMTP-envelope recipients. Changing
+            the content or replaying the signature toward another recipient breaks verification.
+          </p>
+        </article>
+
+        <article class="proof-card">
+          <strong>Paid SMTP admission</strong>
+          <p>
+            Valid postage is charged per recipient only after cryptographic verification.
+            A valid signature without sufficient postage does not buy delivery.
+          </p>
+        </article>
+
+        <article class="proof-card">
+          <strong>Fiat receipts anchored on-chain</strong>
+          <p>
+            Successful card-payment receipts stay private server-side. Their hashes are
+            combined into deterministic Merkle batches and committed to Base using a
+            dedicated gas wallet.
+          </p>
+        </article>
+      </div>
+
+      <div class="proof-flow" aria-label="MidSig receipt anchoring flow">
+        <span>Square USD</span>
+        <b>→</b>
+        <span>Postage credit</span>
+        <b>→</b>
+        <span>Receipt hash</span>
+        <b>→</b>
+        <span>Merkle root</span>
+        <b>→</b>
+        <span>Base</span>
+        <b>→</b>
+        <span>Confirmed</span>
+      </div>
+
+      <div class="chain-proof">
+        <div class="chain-proof-head">
+          <strong>First production anchor proof</strong>
+          <span>Base · Chain ID 8453</span>
+        </div>
+
+        <div class="chain-row">
+          <label>Transaction</label>
+          <code><a href="https://basescan.org/tx/0x48cc213a1843a174665a5f15307b17526427ef996602e023da4f67c7556bb2e8" target="_blank" rel="noopener">0x48cc213a1843a174665a5f15307b17526427ef996602e023da4f67c7556bb2e8 ↗</a></code>
+        </div>
+
+        <div class="chain-row">
+          <label>Merkle root</label>
+          <code>0xeddfa8f0efeb953b91e167790fd67608fd593584aa5913a45fe6308ca89cd0c8</code>
+        </div>
+
+        <div class="chain-row">
+          <label>Batch ID</label>
+          <code>0x216c81f25b7f4970dec1aab4e441189e66d03fcc345b1a55edb0a1c10bee3eda</code>
+        </div>
+
+        <div class="chain-row">
+          <label>Anchor wallet</label>
+          <code><a href="https://basescan.org/address/0x44471Ee17397Bb565CE11E6d37cb98D98Cce3E5F" target="_blank" rel="noopener">0x44471Ee17397Bb565CE11E6d37cb98D98Cce3E5F ↗</a></code>
+        </div>
+      </div>
+
+      <p class="manifesto">
+        No identity. <span>No stamp.</span> No inbox.
+      </p>
+    </section>
+
     <footer><a class="footer-brand" href="index.html">MIDSIG<span> · A little proof goes a long way.</span></a><div><a href="verify.html">Verify a message</a><a href="https://github.com/goldennftplatform-svg/midsig">Source ↗</a></div></footer>
   </div>
 
   <dialog id="wallet-dialog" aria-labelledby="wallet-title" aria-describedby="wallet-description">
     <button class="close-dialog" type="button" data-close="wallet-dialog" aria-label="Close wallet selection">×</button>
-    <span class="eyebrow">OPTIONAL · READ-ONLY CONNECTION</span>
+    <span class="eyebrow">OPTIONAL · WALLET CONNECTION</span>
     <h2 id="wallet-title">Bring your wallet.</h2>
-    <p id="wallet-description">Connection shares your public address with this page. This preview cannot request signatures or transactions.</p>
+    <p id="wallet-description">Connection shares your public address with MidSig so a live Base payment order can be matched to the correct payer.</p>
     <div id="wallet-options" class="wallet-options"></div>
     <p id="wallet-error" class="error" role="alert" hidden></p>
     <button type="button" class="secondary-button" id="skip-wallet">Continue without a wallet</button>
@@ -116,21 +358,21 @@
 
   <dialog id="review-dialog" aria-labelledby="review-title" aria-describedby="review-description">
     <button class="close-dialog" type="button" data-close="review-dialog" aria-label="Close review">×</button>
-    <span class="eyebrow">CHECKOUT PREVIEW · NO FUNDS</span>
+    <span class="eyebrow">LIVE POSTAGE CHECKOUT</span>
     <h2 id="review-title">One last look.</h2>
-    <p id="review-description">Here's the purchase you'd approve when payment verification and postage credits are live.</p>
-    <dl class="review-list"><div><dt>Sending domain</dt><dd id="review-domain"></dd></div><div><dt>Stamp book</dt><dd id="review-stamps"></dd></div><div><dt>Payment route</dt><dd id="review-route"></dd></div><div><dt>Postage value</dt><dd id="review-amount"></dd></div><div><dt>Network fees</dt><dd>Not quoted in preview</dd></div><div><dt>Funds requested now</dt><dd>0 — preview only</dd></div></dl>
-    <p class="field-help">Your domain hasn't been verified. No wallet authorization will be requested.</p>
+    <p id="review-description">Review the postage order before creating a live payment request.</p>
+    <dl class="review-list"><div><dt>Sending domain</dt><dd id="review-domain"></dd></div><div><dt>Stamp book</dt><dd id="review-stamps"></dd></div><div><dt>Payment route</dt><dd id="review-route"></dd></div><div><dt>Postage value</dt><dd id="review-amount"></dd></div><div><dt>Network fees</dt><dd>Quoted by your wallet for Base transactions</dd></div><div><dt>Settlement</dt><dd>Verified before postage is credited</dd></div></dl>
+    <p class="field-help">MidSig verifies domain ownership and settlement before postage becomes spendable.</p>
     <button class="primary-button" id="finish-preview" type="button"><span>Create live order</span><span aria-hidden="true">↗</span></button>
   </dialog>
 
   <dialog id="done-dialog" aria-labelledby="done-title" aria-describedby="done-description">
-    <button class="close-dialog" type="button" data-close="done-dialog" aria-label="Close completed preview">×</button>
-    <span class="done-icon" aria-hidden="true">✓</span><span class="eyebrow">PREVIEW COMPLETE</span>
-    <h2 id="done-title">That's the whole idea.</h2>
-    <p id="done-description">Pick. Review. Back to your day.</p>
-    <div class="done-summary"><strong id="done-stamps"></strong><span id="done-domain"></span><small>No money moved. No usable stamps were created.</small></div>
-    <button class="primary-button" id="download-preview" type="button"><span>Save preview summary</span><span aria-hidden="true">↓</span></button>
+    <button class="close-dialog" type="button" data-close="done-dialog" aria-label="Close completed order">×</button>
+    <span class="done-icon" aria-hidden="true">✓</span><span class="eyebrow">ORDER CREATED</span>
+    <h2 id="done-title">Your postage order is ready.</h2>
+    <p id="done-description">Settle the order. MidSig verifies it. Your postage balance updates.</p>
+    <div class="done-summary"><strong id="done-stamps"></strong><span id="done-domain"></span><small>Postage is credited only after verified settlement.</small></div>
+    <button class="primary-button" id="download-preview" type="button"><span>Save order summary</span><span aria-hidden="true">↓</span></button>
     <button class="secondary-button" type="button" data-close="done-dialog">Back to postage</button>
   </dialog>
 </body>

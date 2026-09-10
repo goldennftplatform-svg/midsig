@@ -50,8 +50,36 @@ class Ledger:
                     created INTEGER NOT NULL, read_at INTEGER,
                     UNIQUE(sender_domain, message_id, recipient)
                 );
+                CREATE TABLE IF NOT EXISTS anchor_receipts (
+                    id INTEGER PRIMARY KEY,
+                    source TEXT NOT NULL,
+                    source_id TEXT NOT NULL,
+                    domain TEXT NOT NULL,
+                    units INTEGER NOT NULL CHECK(units>0),
+                    amount INTEGER NOT NULL CHECK(amount>=0),
+                    currency TEXT NOT NULL,
+                    receipt_hash TEXT NOT NULL UNIQUE,
+                    payload TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    batch_id TEXT,
+                    tx_id TEXT,
+                    created INTEGER NOT NULL,
+                    anchored INTEGER,
+                    UNIQUE(source, source_id)
+                );
                 CREATE INDEX IF NOT EXISTS inbox_recipient ON inbox(recipient, created DESC);
+                CREATE INDEX IF NOT EXISTS anchor_receipts_pending
+                    ON anchor_receipts(status, created);
             """)
+
+            columns = {
+                row[1]
+                for row in db.execute("PRAGMA table_info(anchor_receipts)")
+            }
+            if "tx_id" not in columns:
+                db.execute(
+                    "ALTER TABLE anchor_receipts ADD COLUMN tx_id TEXT"
+                )
 
     @contextlib.contextmanager
     def connect(self):
@@ -227,6 +255,35 @@ class Ledger:
                 raise Conflict("Transaction has already funded another purchase")
             db.execute("UPDATE orders SET status='credited',tx_id=?,proof=?,credited=? WHERE id=?", (tx_id, json.dumps(proof), now, identifier))
             db.execute("INSERT INTO entries(domain,delta,kind,reference,created) VALUES (?,?,?,?,?)", (order["domain"], order["units"], "deposit", "deposit:" + identifier, now))
+
+            # Fiat/card settlement is off-chain, so queue a privacy-preserving
+            # receipt for later batched anchoring on Base. Native Base payments
+            # already have their own on-chain transaction as settlement proof.
+            if order["chain"] == "square":
+                receipt = {
+                    "v": 1,
+                    "source": "square",
+                    "source_id": tx_id,
+                    "order_id": identifier,
+                    "domain": order["domain"],
+                    "units": order["units"],
+                    "amount": int(proof.get("cents") or 0),
+                    "currency": "USD",
+                    "created": now,
+                }
+                payload = json.dumps(receipt, sort_keys=True, separators=(",", ":"))
+                receipt_hash = hashlib.sha256(payload.encode()).hexdigest()
+                db.execute(
+                    """INSERT OR IGNORE INTO anchor_receipts
+                       (source,source_id,domain,units,amount,currency,receipt_hash,payload,status,created)
+                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        "square", tx_id, order["domain"], order["units"],
+                        receipt["amount"], "USD", receipt_hash, payload,
+                        "pending", now,
+                    ),
+                )
+
             db.execute("UPDATE accounts SET balance=balance+? WHERE domain=?", (order["units"], order["domain"]))
         return {"status": "credited", "duplicate": False, "stamps": order["stamps"]}
 
@@ -276,3 +333,105 @@ class Ledger:
             raise Rejected("Message not found")
         self.account(row["recipient"].rsplit("@", 1)[1], user_id)
         return dict(row)
+
+    def pending_anchor_receipts(self, limit=100):
+        """Return oldest unanchored fiat receipts for deterministic batching."""
+        limit = max(1, min(int(limit), 1000))
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT * FROM anchor_receipts
+                   WHERE status='pending'
+                   ORDER BY created ASC, id ASC
+                   LIMIT ?""",
+                (limit,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def mark_anchor_submitted(self, receipt_ids, batch_id, tx_id):
+        """Record the Base transaction immediately after successful broadcast."""
+        if not receipt_ids:
+            raise Rejected("Anchor batch is empty")
+
+        ids = [int(x) for x in receipt_ids]
+        marks = ",".join("?" for _ in ids)
+
+        with self.transaction() as db:
+            rows = db.execute(
+                f"""SELECT id,status FROM anchor_receipts
+                    WHERE id IN ({marks})""",
+                ids,
+            ).fetchall()
+
+            if len(rows) != len(ids):
+                raise Rejected("Anchor batch contains an unknown receipt")
+
+            if any(row["status"] != "pending" for row in rows):
+                raise Conflict("Anchor batch contains a non-pending receipt")
+
+            db.execute(
+                f"""UPDATE anchor_receipts
+                    SET status='submitted',batch_id=?,tx_id=?
+                    WHERE id IN ({marks})""",
+                [batch_id, tx_id, *ids],
+            )
+
+        return {
+            "status": "submitted",
+            "batch_id": batch_id,
+            "tx_id": tx_id,
+            "receipts": len(ids),
+        }
+
+    def submitted_anchor_receipts(self, limit=1000):
+        """Return receipts whose Base transaction is awaiting confirmation."""
+        limit = max(1, min(int(limit), 5000))
+
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT * FROM anchor_receipts
+                   WHERE status='submitted'
+                   ORDER BY created ASC,id ASC
+                   LIMIT ?""",
+                (limit,),
+            ).fetchall()
+
+            return [dict(row) for row in rows]
+
+    def mark_anchor_confirmed(self, tx_id, anchored=None):
+        """Mark every receipt in a confirmed Base transaction as anchored."""
+        if not tx_id:
+            raise Rejected("Anchor transaction id is required")
+
+        anchored = int(time.time()) if anchored is None else int(anchored)
+
+        with self.transaction() as db:
+            rows = db.execute(
+                """SELECT id,batch_id FROM anchor_receipts
+                   WHERE status='submitted' AND tx_id=?""",
+                (tx_id,),
+            ).fetchall()
+
+            if not rows:
+                raise Rejected("Submitted anchor transaction not found")
+
+            batch_ids = {row["batch_id"] for row in rows}
+            if len(batch_ids) != 1:
+                raise Conflict("Submitted transaction contains multiple batch ids")
+
+            batch_id = next(iter(batch_ids))
+
+            db.execute(
+                """UPDATE anchor_receipts
+                   SET status='anchored',anchored=?
+                   WHERE status='submitted' AND tx_id=?""",
+                (anchored, tx_id),
+            )
+
+        return {
+            "status": "anchored",
+            "batch_id": batch_id,
+            "tx_id": tx_id,
+            "receipts": len(rows),
+            "anchored": anchored,
+        }
+
