@@ -4,7 +4,7 @@ import { PrivyProvider, usePrivy } from "@privy-io/react-auth";
 import { toSolanaWalletConnectors } from "@privy-io/react-auth/solana";
 import { base } from "viem/chains";
 
-type Session = { authenticated: boolean; userId: string | null };
+type Session = { authenticated: boolean; userId: string | null; accessToken: string | null };
 type Options = {
   appId: string;
   clientId?: string;
@@ -24,13 +24,27 @@ class AuthBoundary extends Component<{ children: ReactNode }, { failed: boolean 
 }
 
 function Login({ onSession }: Pick<Options, "onSession">) {
-  const { ready, authenticated, user, login, logout } = usePrivy();
+  const { ready, authenticated, user, login, logout, getAccessToken } = usePrivy();
   const [error, setError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
-    onSession({ authenticated: ready && authenticated, userId: ready && authenticated ? user?.id ?? null : null });
-  }, [ready, authenticated, user?.id, onSession]);
+    let cancelled = false;
+    (async () => {
+      let accessToken: string | null = null;
+      if (ready && authenticated) {
+        try { accessToken = await getAccessToken(); } catch { accessToken = null; }
+      }
+      if (!cancelled) {
+        onSession({
+          authenticated: ready && authenticated,
+          userId: ready && authenticated ? user?.id ?? null : null,
+          accessToken,
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [ready, authenticated, user?.id, getAccessToken, onSession]);
 
   async function signOut() {
     setLoggingOut(true);
@@ -63,7 +77,7 @@ export function mountPrivy({ appId, clientId, container, onSession }: Options) {
       appearance: {
         theme: "dark", accentColor: "#b5f7ca", walletChainType: "ethereum-and-solana",
         showWalletLoginFirst: false, landingHeader: "Your next hello starts here",
-        loginMessage: "Sign in to MIDSIG. Postage payments are not enabled yet.",
+        loginMessage: "Sign in to MIDSIG to enroll a domain and buy postage.",
       },
       defaultChain: base,
       supportedChains: [base],

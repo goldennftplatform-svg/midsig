@@ -73,12 +73,14 @@ class VerifyHandler:
         required_bits=0,
         hostname="midsig",
         exempt_domains=(),
+        ledger_path=None,
     ):
         self.lookup = lookup
         self.action = action
         self.required_bits = required_bits
         self.hostname = hostname
         self.exempt_domains = set(d.lower() for d in exempt_domains)
+        self.ledger_path = ledger_path
 
     def _auth_header(self, result, reason=""):
         value = f"{self.hostname}; midsig={result}"
@@ -101,6 +103,50 @@ class VerifyHandler:
         )
 
         if verdict == "pass":
+            if self.ledger_path:
+                try:
+                    import email.utils
+                    import hashlib
+                    from .postage.ledger import Ledger, Rejected
+                    
+                    message_id = core._first(hmap, "message-id") or ""
+                    
+                    # Robust recipient address parsing
+                    recipients = []
+                    for header_name in ("to", "cc"):
+                        for _, val in hmap.get(header_name, []):
+                            for name, addr in email.utils.getaddresses([val]):
+                                if addr and "@" in addr:
+                                    recipients.append(addr.strip().lower())
+                    recipients = list(set(recipients))
+                    
+                    if not recipients:
+                        log.warning("Postage pass rejected: no valid recipients found in headers")
+                        return "r", [self._auth_header("fail", "No valid recipients found in To/Cc headers")]
+                    
+                    # Resolve public key
+                    records = self.lookup(domain)
+                    pub = core._pubkey_from_txt(records)
+                    pub_hex = pub.hex() if pub else ""
+                    
+                    ledger = Ledger(self.ledger_path)
+                    digest = hashlib.sha256(eml.encode("utf-8")).hexdigest()
+                    verified = {
+                        "domain": domain,
+                        "message_id": message_id,
+                        "recipients": recipients,
+                        "public_key": pub_hex,
+                        "digest": digest
+                    }
+                    
+                    ledger.admit(verified, eml)
+                    return "d", [self._auth_header("pass", "ok")]
+                except Rejected as exc:
+                    log.warning("Postage pass rejected by ledger: %s", exc)
+                    return "r", [self._auth_header("fail", f"Postage admission rejected: {exc}")]
+                except Exception as exc:
+                    log.error("Postage pass failed due to internal ledger error: %s", exc, exc_info=True)
+                    return "t", [self._auth_header("temperror", f"Postage admission system error: {exc}")]
             return "a", [self._auth_header("pass", "ok")]
 
         if domain in self.exempt_domains:
@@ -178,6 +224,7 @@ def build_from_config(path):
             required_bits=int(section.get("required_bits", "0")),
             hostname=hostname,
             exempt_domains=_csv(section.get("exempt_domains", "")),
+            ledger_path=section.get("ledger_path"),
         )
     elif mode == "sign":
         keys = {}

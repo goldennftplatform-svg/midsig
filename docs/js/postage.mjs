@@ -8,7 +8,10 @@ const form = $("postage-form");
 const storageKey = "midsig.checkout.preferences.v1";
 const evmProviders = new Map();
 const state = { wallet: null, cleanup: null, attempt: 0, busy: false, order: null, receipt: null };
-let privySession = { authenticated: false, userId: null };
+let privySession = { authenticated: false, userId: null, accessToken: null };
+const API_BASE = (location.hostname === "midsig.aisp.live")
+  ? "http://159.223.184.36:8767"
+  : "";
 const shortAddress = address => `${address.slice(0, 6)}…${address.slice(-4)}`;
 const bundleId = () => form.elements.bundle.value;
 const routeId = () => form.elements.route.value;
@@ -53,7 +56,9 @@ function render() {
   $("art-count").textContent = bundle.stamps;
   $("summary-stamps").textContent = `${bundle.stamps} stamps`;
   $("summary-amount").textContent = `${formatUsdc(BigInt(bundle.stamps) * STAMP_UNITS)} USDC`;
-  $("checkout-button-label").textContent = `Preview ${bundle.stamps} stamps`;
+  $("checkout-button-label").textContent = privySession.authenticated
+    ? `Buy ${bundle.stamps} stamps`
+    : `Preview ${bundle.stamps} stamps`;
   $("checkout-button").disabled = false;
   $("wallet-status").textContent = state.wallet
     ? `${state.wallet.name} · ${shortAddress(state.wallet.address)}`
@@ -251,14 +256,56 @@ form.addEventListener("submit", event => {
   $("review-dialog").showModal();
 });
 
-$("finish-preview").addEventListener("click", () => {
+async function api(path, body) {
+  const headers = { "Content-Type": "application/json" };
+  if (privySession.accessToken) headers.Authorization = `Bearer ${privySession.accessToken}`;
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: body ? "POST" : "GET",
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.detail || data.message || `Request failed (${response.status})`);
+  return data;
+}
+
+$("finish-preview").addEventListener("click", async () => {
   if (!state.order) { $("review-dialog").close(); return; }
-  state.receipt = previewReceipt(state.order, privySession.authenticated ? "privy-login" : state.wallet?.kind || "none");
-  $("done-stamps").textContent = `${state.order.stamps} preview stamps`;
-  $("done-domain").textContent = `For ${state.order.domain} · ${state.order.usdc} USDC planned postage`;
-  $("review-dialog").close();
-  $("done-dialog").showModal();
-  $("page-status").textContent = "Preview complete. No funds requested and no usable credits created.";
+  if (!privySession.authenticated || !privySession.accessToken) {
+    state.receipt = previewReceipt(state.order, state.wallet?.kind || "none");
+    $("done-stamps").textContent = `${state.order.stamps} preview stamps`;
+    $("done-domain").textContent = `For ${state.order.domain} · ${state.order.usdc} USDC planned postage`;
+    $("review-dialog").close();
+    $("done-dialog").showModal();
+    $("page-status").textContent = "Preview complete. Sign in to enroll the domain and buy live stamps.";
+    return;
+  }
+  if (!state.wallet?.address) {
+    showMessage("domain-error", "Connect a wallet first so the order can name the payer.");
+    $("review-dialog").close();
+    return;
+  }
+  $("finish-preview").disabled = true;
+  try {
+    await api("/domain/enroll", { domain: state.order.domain });
+    const created = await api("/order/create", {
+      domain: state.order.domain,
+      chain: state.order.routeId,
+      bundle: state.order.bundleId,
+      payer: state.wallet.address,
+    });
+    state.receipt = created;
+    $("done-stamps").textContent = `${created.bundle_stamps} stamps · ${created.usdc} USDC`;
+    $("done-domain").textContent = `Send USDC to ${created.receiver} then paste the tx hash to credit ${created.domain}`;
+    $("review-dialog").close();
+    $("done-dialog").showModal();
+    $("page-status").textContent = `Order ${created.order_id.slice(0, 8)}… created. Pay native USDC on ${created.chain}, then credit.`;
+  } catch (error) {
+    showMessage("domain-error", error.message);
+    $("review-dialog").close();
+  } finally {
+    $("finish-preview").disabled = false;
+  }
 });
 
 $("download-preview").addEventListener("click", () => {
@@ -284,7 +331,9 @@ for (const dialog of document.querySelectorAll("dialog")) {
 }
 restorePreferences();
 render();
-$("page-status").textContent = "";
+$("page-status").textContent = location.protocol === "https:"
+  ? "Live checkout is at http://159.223.184.36:8767/postage.html (HTTPS pages cannot talk to the HTTP mail API)."
+  : "";
 
 // The independently built React island is loaded only when an operator has
 // supplied the public App ID. It does not enable payment or domain verification.
@@ -293,8 +342,8 @@ if (PRIVY_SETTINGS.appId) {
   root.hidden = false;
   root.textContent = "Loading Privy sign-in…";
   document.querySelector(".preview-notice span").textContent =
-    "Payments and usable stamps aren't enabled yet. Privy login may request a sign-in signature, never a payment approval.";
-  document.querySelector(".under-button").textContent = "Preview only. No payment or token approval requested.";
+    "Sign in, enroll your sending domain from DNS, then pay native USDC on Base. Solana credit is not live yet.";
+  document.querySelector(".under-button").textContent = "Live orders require Privy login and a connected payer wallet.";
   $("browser-wallet-row").hidden = true;
   import("../privy/privy-entry.js").then(({ mountPrivy }) => {
     mountPrivy({
