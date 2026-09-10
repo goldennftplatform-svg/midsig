@@ -154,11 +154,17 @@ def cmd_send(args):
 
 
 def cmd_daemon(args):
+    import logging
+
     from . import handlers, milter
 
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s %(message)s",
+    )
     socket_spec, handler = handlers.build_from_config(args.config)
     server = milter.MilterServer(socket_spec, lambda: handler)
-    print(f"midsigd listening on {socket_spec}")
+    print(f"midsigd listening on {socket_spec}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

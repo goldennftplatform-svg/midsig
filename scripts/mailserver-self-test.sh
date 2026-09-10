@@ -18,6 +18,7 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 export PYTHONPATH="$REPO_DIR"
 HOST="$(hostname)"
 KEY_FILE="${1:-}"
+EML_FILE="${EML_FILE:-/tmp/midsig-signed.eml}"
 
 pass=0
 fail=0
@@ -51,7 +52,7 @@ fi
 # ---------------------------------------------------------------- 3. signed
 if [ -n "$KEY_FILE" ] && [ -f "$KEY_FILE" ]; then
   printf '\n[3] signed mail from aisp.live (real key, real DNS)\n'
-  python3 - "$KEY_FILE" <<'PYEOF' > /tmp/midsig-signed.eml
+  python3 - "$KEY_FILE" > "$EML_FILE" <<'PYEOF'
 import sys
 sys.path.insert(0, "/opt/midsig")
 from midsig import core
@@ -67,9 +68,9 @@ eml = (
 )
 print(core.sign_eml(seed, eml, postage_bits=16))
 PYEOF
-  out=$(swaks --to "test@${HOST}" --from "presale@aisp.live" --data /tmp/midsig-signed.eml --server 127.0.0.1:25 2>&1)
-  rm -f /tmp/midsig-signed.eml
-  if printf '%s' "$out" | grep -qE "^<+\*\* 250"; then
+  out=$(swaks --to "test@${HOST}" --from "presale@aisp.live" --data "@${EML_FILE}" --server 127.0.0.1:25 2>&1)
+  rm -f "$EML_FILE"
+  if printf '%s' "$out" | grep -qE "250 2\\.0\\.0 Ok"; then
     ok "accepted — MIDSIG pass end-to-end"
   else
     bad "not accepted"

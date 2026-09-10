@@ -32,6 +32,7 @@ socket = unix:/var/run/midsigd/midsigd.sock
 action = reject
 required_bits = 0
 dns_server = 127.0.0.53
+doh = true
 cache_ttl = 300
 hostname = mail.${HOST}
 EOF
@@ -47,6 +48,9 @@ Environment=PYTHONPATH=/opt/midsig
 User=midsig
 Group=midsig
 Restart=on-failure
+RestartSec=2
+RuntimeDirectory=midsigd
+RuntimeDirectoryMode=0755
 
 [Install]
 WantedBy=multi-user.target
@@ -60,6 +64,19 @@ postconf -e "milter_protocol = 6"
 postconf -e "virtual_alias_maps = hash:/etc/postfix/virtual"
 echo "test@${HOST} root" > /etc/postfix/virtual
 postmap /etc/postfix/virtual
+
+# postfix smtpd/cleanup run chrooted by default, which hides
+# /var/run/midsigd from them; disable so the milter socket is reachable.
+# postconf -F attribute editing needs Postfix >= 3.8; earlier versions fall
+# back to rewriting master.cf with awk.
+if postconf -F 'smtp/inet/chroot = n' 2>/dev/null; then
+  postconf -F 'cleanup/unix/chroot = n'
+else
+  awk '{ if ($1=="smtp" && $2=="inet") $5="n"; if ($1=="cleanup" && $2=="unix") $5="n"; print }' \
+    /etc/postfix/master.cf > /etc/postfix/master.cf.tmp
+  install -m 0644 /etc/postfix/master.cf.tmp /etc/postfix/master.cf
+  rm -f /etc/postfix/master.cf.tmp
+fi
 
 echo "==> wiring rspamd"
 mkdir -p /etc/rspamd/lua/local /etc/rspamd/local.d
