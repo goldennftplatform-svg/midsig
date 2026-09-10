@@ -62,6 +62,8 @@ class MilterSession:
         self.handler = handler
         self.style = style
         self.headers = []
+        self.recipients = []
+        self.body_chunks = []
         self.client_host = ""
         self.client_addr = ""
 
@@ -109,7 +111,7 @@ class MilterSession:
 
     def _negotiate(self):
         actions = SMFIF_ADDHDRS | SMFIF_CHGHDRS
-        protocol = SMFIP_NOHELO | SMFIP_NOMAIL | SMFIP_NORCPT | SMFIP_NOBODY
+        protocol = SMFIP_NOHELO | SMFIP_NOMAIL
         self._send("O", struct.pack("!III", SMFI_VERSION, actions, protocol))
         cmd, payload = self._recv()
         if cmd != "O":
@@ -128,7 +130,12 @@ class MilterSession:
         if cmd == "M":  # mail from (normally skipped)
             self._send("c")
             return True
-        if cmd == "R":  # rcpt to (normally skipped)
+        if cmd == "R":  # envelope RCPT TO
+            raw = payload.split(b"\0", 1)[0].decode("utf-8", "replace").strip()
+            if raw.startswith("<") and ">" in raw:
+                raw = raw[1:raw.index(">")]
+            if raw:
+                self.recipients.append(raw.lower())
             self._send("c")
             return True
         if cmd == "T":  # data phase marker
@@ -144,6 +151,10 @@ class MilterSession:
             self._send("c")
             return True
         if cmd == "N":  # end of headers
+            self._send("c")
+            return True
+        if cmd == "B":  # body chunk
+            self.body_chunks.append(payload)
             self._send("c")
             return True
         if cmd == "E":  # end of message: verdict time
@@ -164,8 +175,10 @@ class MilterSession:
         return True
 
     def _finish(self):
+        body = b"".join(self.body_chunks).decode("utf-8", "replace")
         action, addheaders = self.handler.on_eom(
-            self.headers, client_host=self.client_host, client_addr=self.client_addr
+            self.headers, client_host=self.client_host, client_addr=self.client_addr,
+            recipients=self.recipients, body=body
         )
         for name, value in addheaders:
             payload = name.encode("utf-8") + b"\0" + value.encode("utf-8") + b"\0"

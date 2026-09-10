@@ -59,8 +59,8 @@ class _CachedLookup:
 _UNAVAILABLE = object()
 
 
-def _eml_from_headers(headers):
-    return "\r\n".join(f"{name}: {value}" for name, value in headers) + "\r\n\r\n"
+def _eml_from_headers(headers, body=""):
+    return "\r\n".join(f"{name}: {value}" for name, value in headers) + "\r\n\r\n" + body
 
 
 class VerifyHandler:
@@ -88,10 +88,11 @@ class VerifyHandler:
             value += f' reason="{reason}"'
         return ("Authentication-Results", value)
 
-    def on_eom(self, headers, client_host="", client_addr=""):
-        eml = _eml_from_headers(headers)
+    def on_eom(self, headers, client_host="", client_addr="", recipients=None, body=""):
+        eml = _eml_from_headers(headers, body)
         verdict, reasons = core.verify_eml(
-            eml, self.lookup, required_bits=self.required_bits
+            eml, self.lookup, required_bits=self.required_bits, recipients=recipients,
+            require_paid_binding=bool(self.ledger_path)
         )
         reason = reasons[0] if reasons else ""
         domain = None
@@ -111,26 +112,19 @@ class VerifyHandler:
                     
                     message_id = core._first(hmap, "message-id") or ""
                     
-                    # Robust recipient address parsing
-                    recipients = []
-                    for header_name in ("to", "cc"):
-                        for _, val in hmap.get(header_name, []):
-                            for name, addr in email.utils.getaddresses([val]):
-                                if addr and "@" in addr:
-                                    recipients.append(addr.strip().lower())
-                    recipients = list(set(recipients))
-                    
+                    # Charge the SMTP envelope recipients, never To/Cc headers.
+                    recipients = sorted(set((r or "").strip().lower() for r in (recipients or []) if "@" in (r or "")))
                     if not recipients:
-                        log.warning("Postage pass rejected: no valid recipients found in headers")
-                        return "r", [self._auth_header("fail", "No valid recipients found in To/Cc headers")]
-                    
+                        log.warning("Postage pass rejected: no envelope recipients")
+                        return "r", [self._auth_header("fail", "No valid SMTP envelope recipients")]
+
                     # Resolve public key
                     records = self.lookup(domain)
                     pub = core._pubkey_from_txt(records)
                     pub_hex = pub.hex() if pub else ""
                     
                     ledger = Ledger(self.ledger_path)
-                    digest = hashlib.sha256(eml.encode("utf-8")).hexdigest()
+                    digest = core.content_digest(core._split(eml)[1])
                     verified = {
                         "domain": domain,
                         "message_id": message_id,
@@ -140,7 +134,7 @@ class VerifyHandler:
                     }
                     
                     ledger.admit(verified, eml)
-                    return "d", [self._auth_header("pass", "ok")]
+                    return "a", [self._auth_header("pass", "ok")]
                 except Rejected as exc:
                     log.warning("Postage pass rejected by ledger: %s", exc)
                     return "r", [self._auth_header("fail", f"Postage admission rejected: {exc}")]
@@ -176,8 +170,8 @@ class SignHandler:
         self.keys = keys
         self.postage_bits = postage_bits
 
-    def on_eom(self, headers, client_host="", client_addr=""):
-        eml = _eml_from_headers(headers)
+    def on_eom(self, headers, client_host="", client_addr="", recipients=None, body=""):
+        eml = _eml_from_headers(headers, body)
         raw_headers, _body = core._split(eml)
         hmap, _order = core._header_map(raw_headers)
         domain = core._from_domain(hmap)
@@ -186,7 +180,7 @@ class SignHandler:
             return "a", []
 
         signed = core.sign_eml(
-            self.keys[domain], eml, postage_bits=self.postage_bits
+            self.keys[domain], eml, postage_bits=self.postage_bits, recipients=recipients
         )
         new_raw, _ = core._split(signed)
         new_hmap, _ = core._header_map(new_raw)

@@ -20,7 +20,7 @@ test("only configured native USDC routes are selectable", () => {
   }
   assert.equal(ROUTES.base.chainId, "0x2105");
   assert.equal(ROUTES.base.receiver, "0x47cf60BdD877203264921D05CE26F81f6d36Aa3E");
-  assert.equal(ROUTES.solana.receiver, "5S9tyrZwcgV127fEQMzCaBNWmEKz3iUBdASKaurBSGHU");
+  assert.equal(ROUTES.solana, undefined);
 });
 
 test("domains are canonicalized without interpreting addresses or URLs as domains", () => {
@@ -40,7 +40,7 @@ test("price formatter rejects invalid or rounded monetary input", () => {
 });
 
 test("downloaded previews can never be mistaken for paid or verified credits", () => {
-  const receipt = previewReceipt(selection("regular", "solana", "example.com"), "none");
+  const receipt = previewReceipt(selection("regular", "base", "example.com"), "none");
   assert.equal(receipt.type, "midsig-checkout-preview");
   assert.equal(receipt.planned_usdc_units, "5000000");
   assert.equal(receipt.payment_status, "not_requested");

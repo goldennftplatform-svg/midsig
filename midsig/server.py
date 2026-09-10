@@ -6,6 +6,7 @@ import base64
 import json
 import os
 import urllib.request
+import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
@@ -108,19 +109,43 @@ def _b64url_json(segment: str) -> dict:
 
 
 def current_user(authorization: Optional[str] = Header(None)) -> str:
+    """Verify a Privy ES256 access token. Never trust decoded claims alone."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sign in first")
     token = authorization[7:].strip()
     try:
-        header, payload, _sig = token.split(".")
-        claims = _b64url_json(payload)
-        hdr = _b64url_json(header)
+        header_seg, payload_seg, sig_seg = token.split(".")
+        claims = _b64url_json(payload_seg)
+        hdr = _b64url_json(header_seg)
+        if hdr.get("alg") != "ES256":
+            raise ValueError("unsupported alg")
+        verification_key = os.getenv("MIDSIG_PRIVY_VERIFICATION_KEY", "").replace("\\n", "\n").strip()
+        if not verification_key:
+            raise RuntimeError("MIDSIG_PRIVY_VERIFICATION_KEY is not configured")
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
+        key = serialization.load_pem_public_key(verification_key.encode("utf-8"))
+        raw_sig = base64.urlsafe_b64decode(sig_seg + "=" * ((4 - len(sig_seg) % 4) % 4))
+        if len(raw_sig) != 64:
+            raise ValueError("invalid ES256 signature")
+        r = int.from_bytes(raw_sig[:32], "big")
+        ss = int.from_bytes(raw_sig[32:], "big")
+        key.verify(encode_dss_signature(r, ss), f"{header_seg}.{payload_seg}".encode("ascii"), ec.ECDSA(hashes.SHA256()))
+    except RuntimeError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
     except Exception:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid access token")
-    if hdr.get("alg") != "ES256":
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Unsupported token")
-    if claims.get("iss") != "privy.io" or claims.get("aud") not in (APP_ID, [APP_ID]):
+
+    now = int(time.time())
+    aud = claims.get("aud")
+    audience_ok = aud == APP_ID or (isinstance(aud, list) and APP_ID in aud)
+    if claims.get("iss") != "privy.io" or not audience_ok:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token is not for this app")
+    if not isinstance(claims.get("exp"), (int, float)) or claims["exp"] <= now:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Access token expired")
+    if isinstance(claims.get("nbf"), (int, float)) and claims["nbf"] > now + 30:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Access token not active")
     user_id = claims.get("sub")
     if not isinstance(user_id, str) or not user_id.startswith("did:privy:"):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token is missing a user")
@@ -179,6 +204,12 @@ def _verify_base(order: dict, tx_id: str) -> dict:
     receipt = _rpc(BASE_RPC, "eth_getTransactionReceipt", [tx_id])
     if not receipt or receipt.get("status") != "0x1":
         raise Rejected("Transaction is not a successful Base settlement")
+    head = _rpc(BASE_RPC, "eth_blockNumber", [])
+    mined = int(receipt.get("blockNumber", "0x0"), 16)
+    confirmations = int(head, 16) - mined + 1 if head else 0
+    required_confirmations = max(1, int(os.getenv("MIDSIG_BASE_CONFIRMATIONS", "2")))
+    if confirmations < required_confirmations:
+        raise Rejected(f"Base settlement has {confirmations} confirmation(s); {required_confirmations} required")
     if int(tx.get("chainId", "0x0"), 16) not in (0, 8453):
         raise Rejected("Transaction is not on Base")
     if (tx.get("to") or "").lower() != BASE_USDC.lower():
@@ -219,6 +250,7 @@ def auth_verify(user_id: str = Depends(current_user)):
 
 @app.post("/domain/enroll")
 def domain_enroll(body: EnrollBody, user_id: str = Depends(current_user)):
+    """Two-step DNS ownership proof. Public _midsig keys alone are not ownership proof."""
     try:
         domain = domain_name(body.domain)
         records = query_txt(f"_midsig.{domain}")
@@ -227,11 +259,19 @@ def domain_enroll(body: EnrollBody, user_id: str = Depends(current_user)):
             raise Rejected("No valid _midsig TXT record for this domain")
         db = get_ledger()
         enrollment = db.enrollment(user_id, domain)
+        proof_name = f"_midsig-verify.{domain}"
+        proof_value = f"midsig-enroll={enrollment['id']}"
+        proof_records = query_txt(proof_name)
+        if not any(proof_value in record for record in proof_records):
+            return {
+                "status": "pending_dns", "domain": domain,
+                "record_name": proof_name, "record_type": "TXT",
+                "record_value": proof_value, "expires": enrollment["expires"],
+            }
         account = db.activate_domain(enrollment, pub)
         return {
-            "domain": account["domain"],
-            "balance": account["balance"],
-            "public_key": account["public_key"],
+            "status": "verified", "domain": account["domain"],
+            "balance": account["balance"], "public_key": account["public_key"],
         }
     except DnsUnavailable as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
@@ -242,6 +282,8 @@ def domain_enroll(body: EnrollBody, user_id: str = Depends(current_user)):
 @app.post("/order/create")
 def order_create(body: OrderBody, user_id: str = Depends(current_user)):
     try:
+        if body.chain != "base":
+            raise Rejected("MVP USDC checkout is Base-only; use card or native USDC on Base")
         db = get_ledger()
         order = db.create_order(user_id, body.domain, body.chain, body.payer, body.bundle)
         receiver = BASE_RECEIVER if order["chain"] == "base" else SOL_RECEIVER
@@ -336,15 +378,8 @@ def order_card(body: CardOrderBody, user_id: str = Depends(current_user)):
             raise Rejected("A sending domain is required")
         db = get_ledger()
         domain = domain_name(body.domain)
-        pub_hex = None
-        try:
-            records = query_txt(f"_midsig.{domain}")
-            pub = _pubkey_from_txt(records)
-            if pub is not None:
-                pub_hex = pub.hex()
-        except DnsUnavailable:
-            pub_hex = None
-        db.claim_domain(user_id, domain, pub_hex)
+        # Card purchases require the same verified domain enrollment as USDC.
+        db.account(domain, user_id)
         order = db.create_order(user_id, domain, "square", "square:card", body.bundle)
         redirect = "https://mail.aisp.live/postage.html?paid=1&order=" + order["id"]
         link = squarepay.create_payment_link(order, redirect)

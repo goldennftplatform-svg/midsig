@@ -290,7 +290,7 @@ def cmd_send(args):
         "\r\n"
         f"{body}\r\n"
     )
-    signed = core.sign_eml(seed, eml, postage_bits=args.postage_bits)
+    signed = core.sign_eml(seed, eml, postage_bits=args.postage_bits, recipients=args.to)
 
     if args.starttls:
         client = smtplib.SMTP(args.smtp, args.port, timeout=30)

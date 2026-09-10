@@ -23,12 +23,31 @@ MIDSIG_HEADER = "X-Midsig"
 POSTAGE_HEADER = "X-Midsig-Postage"
 TXT_PREFIX = "_midsig"
 VERSION = "1"
+PAID_VERSION = "2"
 
 
 def payload(domain: str, message_id: str, timestamp: int) -> bytes:
     """Canonical string signed by MIDSIG (UTF-8, no whitespace tolerance)."""
     return f"midsig1:{domain.lower()}\n{message_id}\n{timestamp}".encode("utf-8")
 
+
+
+def content_digest(body: str) -> str:
+    """Stable SHA-256 of the message body as received by the milter."""
+    normalized = body.replace("\r\n", "\n").replace("\r", "\n")
+    # SMTP transports may add/remove terminal empty lines; canonicalize like DKIM simple body handling.
+    normalized = normalized.rstrip("\n") + "\n"
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def recipient_commitment(address: str) -> str:
+    """Privacy-preserving envelope-recipient commitment for paid MIDSIG v2."""
+    return hashlib.sha256(address.strip().lower().encode("utf-8")).hexdigest()
+
+
+def paid_payload(domain: str, message_id: str, timestamp: int, digest: str, recipient_hashes) -> bytes:
+    hashes = sorted(set(recipient_hashes))
+    return (f"midsig2:{domain.lower()}\n{message_id}\n{timestamp}\n{digest}\n" + ",".join(hashes)).encode("utf-8")
 
 def postage_challenge(domain: str, message_id: str, timestamp: int, nonce: bytes) -> bytes:
     return (
@@ -135,7 +154,7 @@ def _parse_postage(value):
 # ---------------------------------------------------------------- sign / verify
 
 
-def sign_eml(seed: bytes, eml: str, postage_bits: int = 0) -> str:
+def sign_eml(seed: bytes, eml: str, postage_bits: int = 0, recipients=None) -> str:
     """Add MIDSIG (and optional postage) headers to a raw .eml string.
 
     The seed is the *domain* signing secret. `eml` must already contain a
@@ -160,10 +179,19 @@ def sign_eml(seed: bytes, eml: str, postage_bits: int = 0) -> str:
     pub = ed25519.public_key(seed)
     import base64
 
-    sig = ed25519.sign(seed, payload(domain, message_id, timestamp))
-    midsig_value = (
-        f"v={VERSION}; d={domain}; i={message_id}; t={timestamp}; s={base64.b64encode(sig).decode()}"
-    )
+    if recipients:
+        digest = content_digest(body)
+        rhashes = sorted(set(recipient_commitment(r) for r in recipients))
+        sig = ed25519.sign(seed, paid_payload(domain, message_id, timestamp, digest, rhashes))
+        midsig_value = (
+            f"v={PAID_VERSION}; d={domain}; i={message_id}; t={timestamp}; "
+            f"c={digest}; r={','.join(rhashes)}; s={base64.b64encode(sig).decode()}"
+        )
+    else:
+        sig = ed25519.sign(seed, payload(domain, message_id, timestamp))
+        midsig_value = (
+            f"v={VERSION}; d={domain}; i={message_id}; t={timestamp}; s={base64.b64encode(sig).decode()}"
+        )
     out_headers = order + [("x-midsig", midsig_value)]
 
     if postage_bits > 0:
@@ -175,7 +203,7 @@ def sign_eml(seed: bytes, eml: str, postage_bits: int = 0) -> str:
     return header_block + "\r\n\r\n" + body
 
 
-def verify_eml(eml: str, lookup, required_bits: int = 0):
+def verify_eml(eml: str, lookup, required_bits: int = 0, recipients=None, require_paid_binding=False):
     """Verify an .eml against DNS. `lookup(domain)` returns list of TXT strings.
 
     Returns (verdict, reasons) where verdict is "pass", "fail" or "error".
@@ -226,7 +254,28 @@ def verify_eml(eml: str, lookup, required_bits: int = 0):
     if pub is None:
         return "fail", [f"no valid _midsig TXT record for {domain}"]
 
-    if not ed25519.verify(pub, payload(domain, message_id, timestamp), sig):
+    version = fields.get("v", VERSION)
+    if version == PAID_VERSION:
+        digest = fields.get("c", "")
+        rhashes = [x for x in fields.get("r", "").split(",") if x]
+        _raw, body = _split(eml)
+        if digest != content_digest(body):
+            return "fail", ["X-Midsig content digest does not match message body"]
+        if not rhashes:
+            return "fail", ["X-Midsig v2 has no recipient commitments"]
+        if recipients:
+            wanted = {recipient_commitment(r) for r in recipients}
+            if not wanted.issubset(set(rhashes)):
+                return "fail", ["envelope recipient is not authorized by X-Midsig v2"]
+        elif require_paid_binding:
+            return "fail", ["paid MIDSIG verification requires envelope recipients"]
+        signed_payload = paid_payload(domain, message_id, timestamp, digest, rhashes)
+    else:
+        if require_paid_binding:
+            return "fail", ["paid postage requires recipient/content-bound X-Midsig v2"]
+        signed_payload = payload(domain, message_id, timestamp)
+
+    if not ed25519.verify(pub, signed_payload, sig):
         return "fail", ["signature verification failed"]
 
     if required_bits > 0 or _first(headers, "x-midsig-postage"):
