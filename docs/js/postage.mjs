@@ -254,6 +254,26 @@ function availableWallets() {
   return options;
 }
 
+async function autoAttachWallet() {
+  if (state.wallet || routeId() !== "base" || !privySession.authenticated) return;
+  const options = availableWallets();
+  for (const option of options) {
+    if (option.kind !== "evm" || typeof option.provider?.request !== "function") continue;
+    try {
+      const accounts = await bounded(option.provider.request({ method: "eth_accounts" }));
+      if (Array.isArray(accounts) && /^0x[0-9a-fA-F]{40}$/.test(accounts[0] || "")) {
+        let chainId = null;
+        try { chainId = await bounded(option.provider.request({ method: "eth_chainId" })); } catch { /* wallet may not expose chain */ }
+        state.wallet = { address: accounts[0], chainId, kind: "evm", name: option.name, provider: option.provider };
+        state.cleanup = watchWallet(option.provider);
+        showMessage("wallet-notice", "Wallet attached from your sign-in. Review the order to pay.");
+        render();
+        return;
+      }
+    } catch { /* not authorized for this site yet — leave the explicit Connect wallet flow */ }
+  }
+}
+
 function renderWalletOptions() {
   const container = $("wallet-options");
   container.replaceChildren();
@@ -287,6 +307,7 @@ window.addEventListener("eip6963:announceProvider", event => {
   evmProviders.set(detail.info.uuid, {
     name: detail.info.name.slice(0, 60), provider: detail.provider, kind: "evm",
   });
+  if (privySession.authenticated) autoAttachWallet();
   if ($("wallet-dialog").open && !state.busy) renderWalletOptions();
 });
 window.dispatchEvent(new Event("eip6963:requestProvider"));
@@ -310,6 +331,7 @@ form.addEventListener("change", event => {
     disconnect("Switched to crypto. Connect a wallet to pay in USDC.");
   } else if (event.target.name === "route") {
     disconnect("Payment route changed.");
+    if (routeId() === "base") autoAttachWallet();
   } else invalidateOrder();
   savePreferences();
   render();
@@ -480,8 +502,13 @@ $("finish-preview").addEventListener("click", async () => {
       return;
     }
     if (!state.wallet?.address) {
-      showMessage("domain-error", "Connect a wallet first to pay in USDC.");
-      $("review-dialog").close();
+      await autoAttachWallet();
+    }
+    if (!state.wallet?.address) {
+      showMessage("domain-error", "Connect a wallet to pay in USDC, then try again. No funds were requested.");
+      renderWalletOptions();
+      window.dispatchEvent(new Event("eip6963:requestProvider"));
+      $("wallet-dialog").showModal();
       return;
     }
     await api("/domain/enroll", { domain: state.order.domain });
@@ -560,6 +587,7 @@ if (PRIVY_SETTINGS.appId) {
         privySession = session;
         refreshAccount();
         render();
+        autoAttachWallet();
       },
     });
   }).catch(() => {
