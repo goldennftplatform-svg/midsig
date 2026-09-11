@@ -32,6 +32,7 @@ from .postage.policy import (
     STAMP_UNITS,
     Unavailable,
     domain_name,
+    public_key_hex,
 )
 
 LEDGER_PATH = os.getenv("MIDSIG_LEDGER_PATH", "./ledger.db")
@@ -108,7 +109,8 @@ def current_user(authorization: Optional[str] = Header(None)) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sign in first")
     try:
-        return verify_access_token(authorization[7:].strip())
+        uid = verify_access_token(authorization[7:].strip())
+        return uid
     except RuntimeError as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     except Exception:
@@ -139,6 +141,16 @@ def _http_error(exc: Exception) -> HTTPException:
     return HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, str(exc))
 
 
+def current_provider(authorization: Optional[str] = Header(None)) -> dict:
+    """Authenticate a managed-provider 'id.secret' API credential."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Provider API key required")
+    try:
+        return get_ledger().provider_by_key(authorization[7:].strip())
+    except Rejected as exc:
+        raise _http_error(exc)
+
+
 class EnrollBody(BaseModel):
     domain: str
 
@@ -159,6 +171,15 @@ class CreditBody(BaseModel):
 class CardOrderBody(BaseModel):
     domain: str = ""
     bundle: str
+
+
+class ManagedProviderBody(BaseModel):
+    name: str
+
+
+class ManagedDomainBody(BaseModel):
+    domain: str
+    public_key: str | None = None
 
 
 def _rpc(url: str, method: str, params: list) -> Any:
@@ -381,6 +402,73 @@ def order_card(body: CardOrderBody, user_id: str = Depends(current_user)):
     except DnsUnavailable as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
     except (Rejected, Conflict, Unavailable) as exc:
+        raise _http_error(exc)
+
+
+@app.post("/managed/providers")
+def managed_create_provider(body: ManagedProviderBody, user_id: str = Depends(current_user)):
+    """Create a managed provider and return its one-time API credential."""
+    try:
+        created = get_ledger().create_provider(user_id, body.name)
+        return {
+            "provider_id": created["id"],
+            "name": created["name"],
+            "api_secret": created["api_secret"],
+        }
+    except Rejected as exc:
+        raise _http_error(exc)
+
+
+@app.post("/managed/providers/{provider_id}/rotate")
+def managed_rotate_provider(provider_id: str, user_id: str = Depends(current_user)):
+    """Rotate a provider credential. Old secrets stop working immediately."""
+    try:
+        rotated = get_ledger().rotate_provider_key(provider_id, user_id)
+        return {"provider_id": rotated["id"], "api_secret": rotated["api_secret"]}
+    except Rejected as exc:
+        raise _http_error(exc)
+
+
+@app.post("/managed/domains")
+def managed_enroll_domain(body: ManagedDomainBody, provider: dict = Depends(current_provider)):
+    """Enroll a sending domain under the provider after a DNS key match."""
+    try:
+        domain = domain_name(body.domain)
+        if not body.public_key:
+            raise Rejected("The domain public key is required for managed enrollment")
+        pub_hex = public_key_hex(body.public_key)
+        pub = _pubkey_from_txt(query_txt(f"_midsig.{domain}"))
+        if pub is None or pub.hex() != pub_hex:
+            raise Rejected("_midsig TXT for this domain does not match the provided key")
+        return get_ledger().activate_provider_domain(
+            provider["id"], provider["owner_user_id"], domain, pub_hex
+        )
+    except DnsUnavailable as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+    except (Rejected, Conflict) as exc:
+        raise _http_error(exc)
+
+
+@app.get("/managed/domains")
+def managed_list_domains(provider: dict = Depends(current_provider)):
+    """Provider sending domains with live balances. The domain itself owns postage."""
+    try:
+        return {
+            "provider_id": provider["id"],
+            "domains": get_ledger().provider_domains(provider["id"], provider["owner_user_id"]),
+        }
+    except Rejected as exc:
+        raise _http_error(exc)
+
+
+@app.get("/managed/usage")
+def managed_usage(provider: dict = Depends(current_provider), since: int = 0):
+    """Deposit and mail-spend totals across the provider's domains."""
+    try:
+        return get_ledger().provider_usage(
+            provider["id"], provider["owner_user_id"], since=since
+        )
+    except Rejected as exc:
         raise _http_error(exc)
 
 

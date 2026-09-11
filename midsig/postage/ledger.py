@@ -2,6 +2,7 @@
 
 import contextlib
 import hashlib
+import hmac
 import json
 import secrets
 import sqlite3
@@ -66,6 +67,20 @@ class Ledger:
                     created INTEGER NOT NULL,
                     anchored INTEGER,
                     UNIQUE(source, source_id)
+                );
+                CREATE TABLE IF NOT EXISTS providers (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    owner_user_id TEXT NOT NULL,
+                    key_hash TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    created INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS provider_domains (
+                    provider_id TEXT NOT NULL REFERENCES providers(id) ON DELETE CASCADE,
+                    domain TEXT NOT NULL,
+                    added INTEGER NOT NULL,
+                    PRIMARY KEY (provider_id, domain)
                 );
                 CREATE INDEX IF NOT EXISTS inbox_recipient ON inbox(recipient, created DESC);
                 CREATE INDEX IF NOT EXISTS anchor_receipts_pending
@@ -198,6 +213,149 @@ class Ledger:
                     (domain, user_id, key, now),
                 )
         return self.account(domain, user_id)
+
+    @staticmethod
+    def _hash_key(secret):
+        return hashlib.sha256(secret.encode()).hexdigest()
+
+    def create_provider(self, user_id, name, now=None):
+        """Create a managed provider and return its one-time API credential."""
+        now = int(time.time()) if now is None else now
+        name = (name or "").strip()
+        if not name or len(name) > 120:
+            raise Rejected("A provider name is required")
+        identifier = secrets.token_hex(16)
+        secret = secrets.token_urlsafe(32)
+        with self.transaction() as db:
+            db.execute(
+                "INSERT INTO providers(id,name,owner_user_id,key_hash,status,created) VALUES (?,?,?,?,?,?)",
+                (identifier, name, user_id, self._hash_key(secret), "active", now),
+            )
+        return {"id": identifier, "name": name, "owner_user_id": user_id,
+                "api_secret": f"{identifier}.{secret}", "created": now}
+
+    def provider(self, provider_id, user_id=None):
+        """Owner-only provider view. Same error for unknown and non-owned providers."""
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM providers WHERE id=?", (provider_id,)).fetchone()
+        if row is None or (user_id is not None and row["owner_user_id"] != user_id):
+            raise Rejected("Provider not found")
+        return dict(row)
+
+    def provider_by_key(self, api_key):
+        """Resolve the 'id.secret' credential. Constant-time secret comparison."""
+        if not isinstance(api_key, str) or "." not in api_key:
+            raise Rejected("Invalid provider API key")
+        provider_id, _, secret = api_key.partition(".")
+        if not provider_id or not secret:
+            raise Rejected("Invalid provider API key")
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM providers WHERE id=?", (provider_id,)).fetchone()
+        if row is None or row["status"] != "active":
+            raise Rejected("Provider API key is not active")
+        if not hmac.compare_digest(self._hash_key(secret), row["key_hash"]):
+            raise Rejected("Invalid provider API key")
+        return dict(row)
+
+    def rotate_provider_key(self, provider_id, user_id, now=None):
+        """Rotate the credential. Old secrets stop working immediately."""
+        self.provider(provider_id, user_id)
+        secret = secrets.token_urlsafe(32)
+        with self.transaction() as db:
+            db.execute("UPDATE providers SET key_hash=? WHERE id=?", (self._hash_key(secret), provider_id))
+        return {"id": provider_id, "api_secret": f"{provider_id}.{secret}"}
+
+    def activate_provider_domain(self, provider_id, user_id, domain, public_key_hex=None, now=None):
+        """Green-light a sending domain for a managed provider. One provider per domain."""
+        now = int(time.time()) if now is None else now
+        provider = self.provider(provider_id, user_id)
+        domain = domain_name(domain)
+        owned = self.claim_domain(user_id, domain, public_key_hex, now)
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM provider_domains WHERE domain=? AND provider_id!=?",
+                (domain, provider_id),
+            ).fetchone()
+        if row is not None:
+            raise Conflict("This domain is already managed by another provider")
+        with self.transaction() as db:
+            existing = db.execute(
+                "SELECT added FROM provider_domains WHERE provider_id=? AND domain=?",
+                (provider_id, domain),
+            ).fetchone()
+            if existing is None:
+                db.execute(
+                    "INSERT INTO provider_domains(provider_id,domain,added) VALUES (?,?,?)",
+                    (provider_id, domain, now),
+                )
+        return {
+            "provider_id": provider_id,
+            "domain": owned["domain"],
+            "added": existing["added"] if existing else now,
+        }
+
+    def provider_domains(self, provider_id, user_id):
+        """Provider's sending domains with live balance and stamp counts."""
+        provider = self.provider(provider_id, user_id)
+        with self.connect() as db:
+            rows = db.execute(
+                """SELECT d.domain AS domain, d.added AS added,
+                          a.balance AS balance, a.public_key AS public_key
+                   FROM provider_domains d
+                   LEFT JOIN accounts a ON a.domain = d.domain
+                   WHERE d.provider_id=?
+                   ORDER BY d.added ASC""",
+                (provider_id,),
+            ).fetchall()
+        return [{
+            "domain": row["domain"],
+            "added": row["added"],
+            "balance": row["balance"] or 0,
+            "stamps": (row["balance"] or 0) // STAMP_UNITS,
+            "greenlit": bool(row["public_key"]) and row["public_key"] != "00" * 32,
+        } for row in rows]
+
+    def provider_usage(self, provider_id, user_id, since=None):
+        """Aggregated deposits and mail spend across the provider's domains."""
+        provider = self.provider(provider_id, user_id)
+        domains = self.provider_domains(provider_id, user_id)
+        since = 0 if since is None else int(since)
+        by_domain = {}
+        total_balance = 0
+        if domains:
+            names = [d["domain"] for d in domains]
+            marks = ",".join("?" for _ in names)
+            with self.connect() as db:
+                rows = db.execute(
+                    f"""SELECT domain, kind, SUM(delta) AS units
+                        FROM entries WHERE domain IN ({marks}) AND created>=?
+                        GROUP BY domain, kind""",
+                    [*names, since],
+                ).fetchall()
+            for row in rows:
+                by_domain.setdefault(row["domain"], {}).setdefault(row["kind"], 0)
+                by_domain[row["domain"]][row["kind"]] += row["units"]
+        spent_units = 0
+        received_units = 0
+        for domain in domains:
+            total_balance += domain["balance"]
+            spent_units += -by_domain.get(domain["domain"], {}).get("mail", 0)
+            received_units += by_domain.get(domain["domain"], {}).get("deposit", 0)
+        return {
+            "provider_id": provider_id,
+            "name": provider["name"],
+            "domains": [{
+                "domain": d["domain"],
+                "balance": d["balance"],
+                "stamps": d["stamps"],
+                "greenlit": d["greenlit"],
+            } for d in domains],
+            "balance_units": total_balance,
+            "stamps": total_balance // STAMP_UNITS,
+            "spent_units": spent_units,
+            "received_units": received_units,
+            "since": since,
+        }
 
     def create_order(self, user_id, domain, chain, payer, bundle=None, now=None, stamps=None):
         now = int(time.time()) if now is None else now

@@ -90,6 +90,13 @@ def base58_bytes(value, size):
     return result
 
 
+def public_key_hex(value):
+    """An Ed25519 public key as exactly 64 lowercase hex characters."""
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", value):
+        raise Rejected("An Ed25519 public key is 64 hex characters")
+    return value.lower()
+
+
 def payer_address(chain, value):
     if chain == "square":
         return "square:card"
