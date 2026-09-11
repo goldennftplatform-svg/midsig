@@ -108,6 +108,55 @@ def _b64url_json(segment: str) -> dict:
     return json.loads(base64.urlsafe_b64decode(segment + pad))
 
 
+_PRIVY_JWKS_URL = os.getenv("MIDSIG_PRIVY_JWKS_URL", f"https://auth.privy.io/api/v1/apps/{APP_ID}/jwks.json")
+_PRIVY_JWKS_TTL = 3600
+_jwks_cache: Dict[Any, Any] = {}
+
+
+def _jwk_to_pem(jwk: dict) -> bytes:
+    """Convert an EC JWK to a PEM SubjectPublicKeyInfo for ES256 verification."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    pad = "=" * ((4 - len(jwk["x"]) % 4) % 4)
+    x = int.from_bytes(base64.urlsafe_b64decode(jwk["x"] + pad), "big")
+    y = int.from_bytes(base64.urlsafe_b64decode(jwk["y"] + pad), "big")
+    pub = ec.EllipticCurvePublicNumbers(x, y, ec.SECP256R1()).public_key()
+    return pub.public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+
+
+def _verification_keys() -> Dict[str, Optional[bytes]]:
+    """Return {kid: PEM bytes} for verifying Privy access tokens.
+
+    MIDSIG_PRIVY_VERIFICATION_KEY, when set, is a single static key (kid "").
+    Otherwise the app's public JWKS is fetched from auth.privy.io and cached
+    for MIDSIG_PRIVY_JWKS_TTL seconds (default 3600), matching how the
+    official Privy server SDK verifies tokens.
+    """
+    now = time.time()
+    if _jwks_cache.get("fetched_at") and now - _jwks_cache["fetched_at"] < _PRIVY_JWKS_TTL:
+        return _jwks_cache["keys"]
+    static = os.getenv("MIDSIG_PRIVY_VERIFICATION_KEY", "").replace("\\n", "\n").strip()
+    try:
+        if static:
+            keys: Dict[str, Optional[bytes]] = {"": static.encode("utf-8")}
+        else:
+            with urllib.request.urlopen(_PRIVY_JWKS_URL, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            keys = {}
+            for jwk in data.get("keys", []):
+                keys[jwk["kid"]] = _jwk_to_pem(jwk)
+            if not keys:
+                raise RuntimeError("Privy JWKS returned no verification keys")
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f"MIDSIG_PRIVY_VERIFICATION_KEY is not configured and JWKS fetch failed: {exc}") from exc
+    _jwks_cache["fetched_at"] = now
+    _jwks_cache["keys"] = keys
+    return keys
+
+
 def current_user(authorization: Optional[str] = Header(None)) -> str:
     """Verify a Privy ES256 access token. Never trust decoded claims alone."""
     if not authorization or not authorization.startswith("Bearer "):
@@ -119,13 +168,16 @@ def current_user(authorization: Optional[str] = Header(None)) -> str:
         hdr = _b64url_json(header_seg)
         if hdr.get("alg") != "ES256":
             raise ValueError("unsupported alg")
-        verification_key = os.getenv("MIDSIG_PRIVY_VERIFICATION_KEY", "").replace("\\n", "\n").strip()
-        if not verification_key:
-            raise RuntimeError("MIDSIG_PRIVY_VERIFICATION_KEY is not configured")
         from cryptography.hazmat.primitives import hashes, serialization
         from cryptography.hazmat.primitives.asymmetric import ec
         from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
-        key = serialization.load_pem_public_key(verification_key.encode("utf-8"))
+        verification_keys = _verification_keys()
+        pem = verification_keys.get(hdr.get("kid") or "")
+        if pem is None and "" in verification_keys:
+            pem = verification_keys[""]
+        if pem is None:
+            raise ValueError("no verification key for token kid")
+        key = serialization.load_pem_public_key(pem)
         raw_sig = base64.urlsafe_b64decode(sig_seg + "=" * ((4 - len(sig_seg) % 4) % 4))
         if len(raw_sig) != 64:
             raise ValueError("invalid ES256 signature")
