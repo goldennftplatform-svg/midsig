@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import json
 import os
 import urllib.request
@@ -20,6 +19,7 @@ from .core import _pubkey_from_txt
 from .dns import DnsUnavailable, query_txt
 from .postage.ledger import Ledger
 from .postage import square as squarepay
+from .privyauth import verify_access_token
 from .postage.policy import (
     APP_ID,
     BASE_RECEIVER,
@@ -103,89 +103,14 @@ def _startup():
     get_ledger()
 
 
-def _b64url_json(segment: str) -> dict:
-    pad = "=" * ((4 - len(segment) % 4) % 4)
-    return json.loads(base64.urlsafe_b64decode(segment + pad))
-
-
-_PRIVY_JWKS_URL = os.getenv("MIDSIG_PRIVY_JWKS_URL", f"https://auth.privy.io/api/v1/apps/{APP_ID}/jwks.json")
-_PRIVY_JWKS_TTL = 3600
-_jwks_cache: Dict[Any, Any] = {}
-
-
-def _jwk_to_pem(jwk: dict) -> bytes:
-    """Convert an EC JWK to a PEM SubjectPublicKeyInfo for ES256 verification."""
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.asymmetric import ec
-
-    pad = "=" * ((4 - len(jwk["x"]) % 4) % 4)
-    x = int.from_bytes(base64.urlsafe_b64decode(jwk["x"] + pad), "big")
-    y = int.from_bytes(base64.urlsafe_b64decode(jwk["y"] + pad), "big")
-    pub = ec.EllipticCurvePublicNumbers(x, y, ec.SECP256R1()).public_key()
-    return pub.public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
-
-
-def _verification_keys() -> Dict[str, Optional[bytes]]:
-    """Return {kid: PEM bytes} for verifying Privy access tokens.
-
-    MIDSIG_PRIVY_VERIFICATION_KEY, when set, is a single static key (kid "").
-    Otherwise the app's public JWKS is fetched from auth.privy.io and cached
-    for MIDSIG_PRIVY_JWKS_TTL seconds (default 3600), matching how the
-    official Privy server SDK verifies tokens.
-    """
-    now = time.time()
-    if _jwks_cache.get("fetched_at") and now - _jwks_cache["fetched_at"] < _PRIVY_JWKS_TTL:
-        return _jwks_cache["keys"]
-    static = os.getenv("MIDSIG_PRIVY_VERIFICATION_KEY", "").replace("\\n", "\n").strip()
-    try:
-        if static:
-            keys: Dict[str, Optional[bytes]] = {"": static.encode("utf-8")}
-        else:
-            with urllib.request.urlopen(_PRIVY_JWKS_URL, timeout=15) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            keys = {}
-            for jwk in data.get("keys", []):
-                keys[jwk["kid"]] = _jwk_to_pem(jwk)
-            if not keys:
-                raise RuntimeError("Privy JWKS returned no verification keys")
-    except RuntimeError:
-        raise
-    except Exception as exc:
-        raise RuntimeError(f"MIDSIG_PRIVY_VERIFICATION_KEY is not configured and JWKS fetch failed: {exc}") from exc
-    _jwks_cache["fetched_at"] = now
-    _jwks_cache["keys"] = keys
-    return keys
-
-
 def current_user(authorization: Optional[str] = Header(None)) -> str:
     """Verify a Privy ES256 access token. Never trust decoded claims alone."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sign in first")
-    token = authorization[7:].strip()
     try:
-        header_seg, payload_seg, sig_seg = token.split(".")
-        claims = _b64url_json(payload_seg)
-        hdr = _b64url_json(header_seg)
-        if hdr.get("alg") != "ES256":
-            raise ValueError("unsupported alg")
-        from cryptography.hazmat.primitives import hashes, serialization
-        from cryptography.hazmat.primitives.asymmetric import ec
-        from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
-        verification_keys = _verification_keys()
-        pem = verification_keys.get(hdr.get("kid") or "")
-        if pem is None and "" in verification_keys:
-            pem = verification_keys[""]
-        if pem is None:
-            raise ValueError("no verification key for token kid")
-        key = serialization.load_pem_public_key(pem)
-        raw_sig = base64.urlsafe_b64decode(sig_seg + "=" * ((4 - len(sig_seg) % 4) % 4))
-        if len(raw_sig) != 64:
-            raise ValueError("invalid ES256 signature")
-        r = int.from_bytes(raw_sig[:32], "big")
-        ss = int.from_bytes(raw_sig[32:], "big")
-        key.verify(encode_dss_signature(r, ss), f"{header_seg}.{payload_seg}".encode("ascii"), ec.ECDSA(hashes.SHA256()))
+        return verify_access_token(authorization[7:].strip())
     except RuntimeError as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     except Exception:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid access token")
 

@@ -1,8 +1,11 @@
 """Privy access-token verification: static PEM key and live JWKS kid matching.
 
 Signs real ES256 JWTs with a locally-generated P-256 key (the same curve
-Privy uses) and asserts current_user accepts valid tokens and rejects
+Privy uses) and asserts verify_access_token accepts valid tokens and rejects
 tampered/wrong-kid tokens with 401.
+
+The signing side needs `cryptography`, which the CI runner does not install;
+those tests skip themselves there and run wherever cryptography is present.
 """
 
 import base64
@@ -12,14 +15,17 @@ import tempfile
 import time
 import unittest
 
-from fastapi import HTTPException
-
 from midsig.postage.policy import APP_ID
-from midsig import server
+from midsig import privyauth
 
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+try:
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+
+    HAVE_CRYPTO = True
+except ImportError:  # pragma: no cover - CI runner installs no deps
+    HAVE_CRYPTO = False
 
 
 def _b64u(data: bytes) -> str:
@@ -30,7 +36,7 @@ def _b64u_pad(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode("ascii")
 
 
-def _sign_token(priv: ec.EllipticCurvePrivateKey, claims: dict, kid: str | None = None) -> str:
+def _sign_token(priv, claims: dict, kid: str | None = None) -> str:
     header = {"alg": "ES256", "typ": "JWT"}
     if kid:
         header["kid"] = kid
@@ -42,7 +48,7 @@ def _sign_token(priv: ec.EllipticCurvePrivateKey, claims: dict, kid: str | None 
     return f"{body}.{payload}.{_b64u_pad(sig)}"
 
 
-def _pub_jwk(pub: ec.EllipticCurvePublicKey) -> dict:
+def _pub_jwk(pub) -> dict:
     n = pub.public_numbers()
     return {
         "kty": "EC",
@@ -70,6 +76,7 @@ def _claims(sub="did:privy:testuser", extra=None) -> dict:
     return claims
 
 
+@unittest.skipUnless(HAVE_CRYPTO, "cryptography not installed")
 class PrivyAuthTests(unittest.TestCase):
     def setUp(self):
         self.priv = ec.generate_private_key(ec.SECP256R1())
@@ -78,11 +85,11 @@ class PrivyAuthTests(unittest.TestCase):
         ).decode("utf-8")
         self._old_key = os.environ.pop("MIDSIG_PRIVY_VERIFICATION_KEY", None)
         self._old_jwks_url = os.environ.pop("MIDSIG_PRIVY_JWKS_URL", None)
-        server._jwks_cache = {}
-        server._PRIVY_JWKS_URL = f"https://auth.privy.io/api/v1/apps/{APP_ID}/jwks.json"
+        privyauth._jwks_cache = {}
+        privyauth._PRIVY_JWKS_URL = f"https://auth.privy.io/api/v1/apps/{APP_ID}/jwks.json"
 
     def tearDown(self):
-        server._jwks_cache = {}
+        privyauth._jwks_cache = {}
         if self._old_key is not None:
             os.environ["MIDSIG_PRIVY_VERIFICATION_KEY"] = self._old_key
         else:
@@ -91,43 +98,36 @@ class PrivyAuthTests(unittest.TestCase):
             os.environ["MIDSIG_PRIVY_JWKS_URL"] = self._old_jwks_url
         else:
             os.environ.pop("MIDSIG_PRIVY_JWKS_URL", None)
-        server._PRIVY_JWKS_URL = f"https://auth.privy.io/api/v1/apps/{APP_ID}/jwks.json"
+        privyauth._PRIVY_JWKS_URL = f"https://auth.privy.io/api/v1/apps/{APP_ID}/jwks.json"
 
     def test_static_pem_accepts_valid_token(self):
         os.environ["MIDSIG_PRIVY_VERIFICATION_KEY"] = self.pub_pem
         token = _sign_token(self.priv, _claims(), kid="whatever")
-        self.assertEqual(server.current_user(f"Bearer {token}"), "did:privy:testuser")
+        self.assertEqual(privyauth.verify_access_token(token), "did:privy:testuser")
 
     def test_static_pem_rejects_tampered_body(self):
         os.environ["MIDSIG_PRIVY_VERIFICATION_KEY"] = self.pub_pem
         token = _sign_token(self.priv, _claims(sub="did:privy:attacker"))
         tampered = token.split(".")[0] + "." + token.split(".")[1][:-1] + "x" + "." + token.split(".")[2]
-        with self.assertRaises(HTTPException) as ctx:
-            server.current_user(f"Bearer {tampered}")
-        self.assertEqual(ctx.exception.status_code, 401)
+        with self.assertRaises(ValueError):
+            privyauth.verify_access_token(tampered)
 
-    def test_missing_token_is_401(self):
-        with self.assertRaises(HTTPException) as ctx:
-            server.current_user(None)
-        self.assertEqual(ctx.exception.status_code, 401)
-
-    def test_static_pem_missing_is_503(self):
+    def test_static_pem_missing_is_runtime_error(self):
         os.environ.pop("MIDSIG_PRIVY_VERIFICATION_KEY", None)
-        server._jwks_cache = {}
-        server._PRIVY_JWKS_URL = "file:///nonexistent/jwks.json"
+        privyauth._jwks_cache = {}
+        privyauth._PRIVY_JWKS_URL = "file:///nonexistent/jwks.json"
         token = _sign_token(self.priv, _claims())
-        with self.assertRaises(HTTPException) as ctx:
-            server.current_user(f"Bearer {token}")
-        self.assertEqual(ctx.exception.status_code, 503)
+        with self.assertRaises(RuntimeError):
+            privyauth.verify_access_token(token)
 
     def test_jwks_kid_matching_accepts_valid_token(self):
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
             fh.write(json.dumps({"keys": [_pub_jwk(self.priv.public_key())]}))
             path = fh.name
         try:
-            server._PRIVY_JWKS_URL = f"file:///{path.replace(chr(92), '/')}"
+            privyauth._PRIVY_JWKS_URL = f"file:///{path.replace(chr(92), '/')}"
             token = _sign_token(self.priv, _claims(), kid="test-kid-1")
-            self.assertEqual(server.current_user(f"Bearer {token}"), "did:privy:testuser")
+            self.assertEqual(privyauth.verify_access_token(token), "did:privy:testuser")
         finally:
             os.unlink(path)
 
@@ -136,22 +136,40 @@ class PrivyAuthTests(unittest.TestCase):
             fh.write(json.dumps({"keys": [_pub_jwk(self.priv.public_key())]}))
             path = fh.name
         try:
-            server._PRIVY_JWKS_URL = f"file:///{path.replace(chr(92), '/')}"
+            privyauth._PRIVY_JWKS_URL = f"file:///{path.replace(chr(92), '/')}"
             other = ec.generate_private_key(ec.SECP256R1())
             token = _sign_token(other, _claims(), kid="test-kid-1")
-            with self.assertRaises(HTTPException) as ctx:
-                server.current_user(f"Bearer {token}")
-            self.assertEqual(ctx.exception.status_code, 401)
+            with self.assertRaises(ValueError):
+                privyauth.verify_access_token(token)
         finally:
             os.unlink(path)
 
-    def test_jwks_auth_failure_is_503(self):
-        server._jwks_cache = {}
-        server._PRIVY_JWKS_URL = "file:///nonexistent/jwks.json"
+    def test_jwks_auth_failure_is_runtime_error(self):
+        privyauth._jwks_cache = {}
+        privyauth._PRIVY_JWKS_URL = "file:///nonexistent/jwks.json"
         token = _sign_token(self.priv, _claims(), kid="anything")
-        with self.assertRaises(HTTPException) as ctx:
-            server.current_user(f"Bearer {token}")
-        self.assertEqual(ctx.exception.status_code, 503)
+        with self.assertRaises(RuntimeError):
+            privyauth.verify_access_token(token)
+
+    def test_bad_alg_rejected(self):
+        os.environ["MIDSIG_PRIVY_VERIFICATION_KEY"] = self.pub_pem
+        token = _sign_token(self.priv, _claims())
+        bad = _b64u(json.dumps({"alg": "RS256", "typ": "JWT"}, separators=(",", ":")).encode("ascii"))
+        token = bad + "." + token.split(".", 1)[1]
+        with self.assertRaises(ValueError):
+            privyauth.verify_access_token(token)
+
+    def test_expired_token_rejected(self):
+        os.environ["MIDSIG_PRIVY_VERIFICATION_KEY"] = self.pub_pem
+        token = _sign_token(self.priv, _claims(extra={"exp": int(time.time()) - 30}))
+        with self.assertRaises(ValueError):
+            privyauth.verify_access_token(token)
+
+    def test_wrong_audience_rejected(self):
+        os.environ["MIDSIG_PRIVY_VERIFICATION_KEY"] = self.pub_pem
+        token = _sign_token(self.priv, _claims(extra={"aud": "some-other-app"}))
+        with self.assertRaises(ValueError):
+            privyauth.verify_access_token(token)
 
 
 if __name__ == "__main__":
