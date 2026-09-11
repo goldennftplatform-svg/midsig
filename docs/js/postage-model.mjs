@@ -15,11 +15,6 @@ export const ROUTES = Object.freeze({
     receiver: "0x47cf60BdD877203264921D05CE26F81f6d36Aa3E",
     token: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
   }),
-  solana: Object.freeze({
-    label: "USDC on Solana", walletType: "solana",
-    receiver: "5S9tyrZwcgV127fEQMzCaBNWmEKz3iUBdASKaurBSGHU",
-    token: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-  }),
 });
 
 export function bundleById(id) {

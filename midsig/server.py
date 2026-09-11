@@ -169,7 +169,8 @@ class EnrollBody(BaseModel):
 class OrderBody(BaseModel):
     domain: str
     chain: str
-    bundle: str
+    bundle: str | None = None
+    dollars: int | None = None
     payer: str
 
 
@@ -285,7 +286,17 @@ def order_create(body: OrderBody, user_id: str = Depends(current_user)):
         if body.chain != "base":
             raise Rejected("MVP USDC checkout is Base-only; use card or native USDC on Base")
         db = get_ledger()
-        order = db.create_order(user_id, body.domain, body.chain, body.payer, body.bundle)
+        if body.dollars is not None:
+            if isinstance(body.dollars, bool) or body.dollars < 1 or body.dollars > 1000:
+                raise Rejected("Base USDC amount must be between $1 and $1,000")
+            order = db.create_order(
+                user_id, body.domain, body.chain, body.payer,
+                stamps=body.dollars * 20,
+            )
+        else:
+            order = db.create_order(
+                user_id, body.domain, body.chain, body.payer, body.bundle,
+            )
         receiver = BASE_RECEIVER if order["chain"] == "base" else SOL_RECEIVER
         token = BASE_USDC if order["chain"] == "base" else None
         return {

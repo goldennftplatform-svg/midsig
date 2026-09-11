@@ -139,8 +139,8 @@ class TestVerifyMilter(unittest.TestCase):
         mta.close()
         actions = [c for c, _ in replies]
         self.assertEqual(actions[-1], "a")
-        self.assertTrue(any(c == "m" for c, _ in replies))
-        added = [p for c, p in replies if c == "m"]
+        self.assertTrue(any(c == "h" for c, _ in replies))
+        added = [p for c, p in replies if c == "h"]
         self.assertTrue(any(b"Authentication-Results" in p for p in added))
         self.assertTrue(any(b"midsig=pass" in p for p in added))
 
@@ -176,7 +176,7 @@ class TestVerifyMilter(unittest.TestCase):
         mta.close()
         srv.server.shutdown()
         self.assertEqual([c for c, _ in replies][-1], "a")
-        added = [p for c, p in replies if c == "m"]
+        added = [p for c, p in replies if c == "h"]
         self.assertTrue(any(b"midsig=fail" in p for p in added))
 
     def test_exempt_domain_passes(self):
@@ -212,7 +212,7 @@ class TestSignMilter(unittest.TestCase):
         self.assertEqual([c for c, _ in replies][-1], "a")
         added = dict()
         for c, p in replies:
-            if c == "m":
+            if c == "h":
                 name, _, value = p.decode().partition("\0")
                 added[name] = value
         self.assertIn("x-midsig", added)
@@ -232,7 +232,7 @@ class TestSignMilter(unittest.TestCase):
         mta.close()
         srv.server.shutdown()
         self.assertEqual([c for c, _ in replies][-1], "a")
-        self.assertFalse(any(c == "m" for c, _ in replies))
+        self.assertFalse(any(c == "h" for c, _ in replies))
 
 
 class TestSendmailWireFormat(unittest.TestCase):

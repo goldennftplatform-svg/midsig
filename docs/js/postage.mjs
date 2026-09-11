@@ -1,8 +1,8 @@
 import { bundleById, formatUsdc, STAMP_UNITS, routeById, selection, previewReceipt } from "./postage-model.mjs";
 import { PRIVY_SETTINGS } from "./privy-settings.mjs";
 
-// Deliberately preview-only. There are no signing, sending, approval, swap,
-// credit-balance, or wallet-network mutation methods anywhere in this controller.
+// Live checkout controller. The server remains authoritative for payment
+// amount, payer, token, receiver, settlement verification, and postage credit.
 const $ = id => document.getElementById(id);
 const form = $("postage-form");
 const storageKey = "midsig.checkout.preferences.v1";
@@ -15,6 +15,49 @@ const API_BASE = (location.hostname === "mail.aisp.live")
 const shortAddress = address => `${address.slice(0, 6)}…${address.slice(-4)}`;
 const bundleId = () => form.elements.bundle.value;
 const routeId = () => form.elements.route.value;
+
+let baseDollars = 1;
+const cryptoDollars = () => {
+  const el = document.getElementById("base-dollars");
+  const n = Number(el?.value || baseDollars);
+  return Number.isInteger(n) && n >= 1 && n <= 1000 ? n : 1;
+};
+
+function mountBaseDollars() {
+  if (document.getElementById("base-dollar-picker")) return;
+
+  const box = document.createElement("div");
+  box.id = "base-dollar-picker";
+  box.hidden = true;
+  box.innerHTML = `
+    <p><strong>Base USDC amount</strong></p>
+    <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin:.5rem 0">
+      ${[1,2,5,10].map(n => `<button type="button" data-usdc="${n}">$${n}</button>`).join("")}
+    </div>
+    <label>Custom $ <input id="base-dollars" type="number" min="1" max="1000" step="1" value="1" style="width:6rem"></label>
+    <p class="field-help">$1 minimum · 20 stamps per USDC</p>`;
+
+  const walletRow = document.getElementById("browser-wallet-row");
+  walletRow?.parentElement?.insertBefore(box, walletRow);
+
+  box.querySelectorAll("[data-usdc]").forEach(btn => {
+    btn.onclick = () => {
+      baseDollars = Number(btn.dataset.usdc);
+      document.getElementById("base-dollars").value = baseDollars;
+      invalidateOrder();
+      render();
+    };
+  });
+
+  document.getElementById("base-dollars").oninput = e => {
+    const n = Number(e.target.value);
+    if (Number.isInteger(n) && n >= 1 && n <= 1000) {
+      baseDollars = n;
+      invalidateOrder();
+      render();
+    }
+  };
+}
 
 function showMessage(id, message) {
   $(id).textContent = message;
@@ -87,12 +130,15 @@ async function refreshAccount() {
 
 function render() {
   const bundle = bundleById(bundleId());
-  $("art-count").textContent = bundle.stamps;
-  $("summary-stamps").textContent = `${bundle.stamps} stamps`;
-  const usd = `$${(bundle.stamps * 5 / 100).toFixed(2)}`;
+  const card = routeId() === "card";
+  const dollars = card ? bundle.stamps * 5 / 100 : cryptoDollars();
+  const stamps = card ? bundle.stamps : dollars * 20;
+  $("base-dollar-picker").hidden = card;
+  $("art-count").textContent = stamps;
+  $("summary-stamps").textContent = `${stamps} stamps`;
+  const usd = `$${dollars.toFixed(2)}`;
   $("summary-amount").textContent = usd;
   if ($("summary-due")) $("summary-due").textContent = usd;
-  const card = routeId() === "card";
   $("checkout-button-label").textContent = privySession.authenticated
     ? (card ? `Pay ${usd} with card` : `Pay ${usd} in USDC`)
     : `Sign in to pay ${usd}`;
@@ -100,7 +146,7 @@ function render() {
   $("checkout-button").disabled = false;
   $("wallet-status").textContent = state.wallet
     ? `${state.wallet.name} · ${shortAddress(state.wallet.address)}`
-    : "No wallet needed to try it";
+    : (card ? "No wallet needed for card checkout" : "Connect a Base wallet to pay USDC");
   $("connect-wallet").textContent = state.wallet ? "Disconnect" : "Connect wallet ↗";
 }
 
@@ -130,11 +176,11 @@ function watchWallet(provider) {
 
 function walletError(error) {
   if (error?.code === 4001 || /reject|declin|cancel/i.test(error?.message || "")) {
-    return "Connection cancelled. You can try again or preview without a wallet.";
+    return "Wallet request cancelled. No payment was made.";
   }
   if (error?.code === -32002) return "Your wallet already has a request open. Check its window.";
   if (error?.message === "timeout") return "Your wallet didn't respond. Close its pending request and try again.";
-  return "Couldn't connect to that wallet. Unlock it and try again, or continue without one.";
+  return "Couldn't connect to that wallet. Unlock it and try again.";
 }
 
 async function bounded(promise) {
@@ -170,11 +216,11 @@ async function connect(option) {
       }
     }
     if (attempt !== state.attempt || !$("wallet-dialog").open) return;
-    state.wallet = { address, chainId, kind: option.kind, name: option.name };
+    state.wallet = { address, chainId, kind: option.kind, name: option.name, provider: option.provider };
     state.cleanup = watchWallet(option.provider);
     showMessage("wallet-notice", option.kind === "evm" && chainId !== "0x2105"
-      ? "Your wallet is on another network. Live Base checkout will need Base; this preview won't switch networks or request funds."
-      : "Read-only connection. No ownership proof, signature, or payment requested.");
+      ? "Your wallet is on another network. Checkout will ask to switch to Base before payment."
+      : "Wallet connected. Payment is requested only after you review the order.");
     $("wallet-dialog").close();
     render();
   } catch (error) {
@@ -216,7 +262,7 @@ function renderWalletOptions() {
     const empty = document.createElement("p");
     empty.className = "wallet-empty";
     empty.textContent = routeId() === "base"
-      ? "No Base-compatible browser wallet detected. Open this page in your wallet's browser, or try the preview without connecting."
+      ? "No Base-compatible browser wallet detected. Open this page in your wallet's browser or install an EVM wallet."
       : "No Phantom or Solflare browser wallet detected. Open this page in your wallet's browser, or try the preview without connecting.";
     container.append(empty);
   }
@@ -287,6 +333,10 @@ form.addEventListener("submit", event => {
   let order;
   try {
     order = selection(bundleId(), routeId(), $("sending-domain").value);
+    if (routeId() === "base") {
+      const dollars = cryptoDollars();
+      order = { ...order, stamps: dollars * 20, dollars };
+    }
   } catch (error) {
     showMessage("domain-error", error.message);
     $("sending-domain").setAttribute("aria-invalid", "true");
@@ -319,6 +369,99 @@ async function api(path, body) {
   return data;
 }
 
+const BASE_CHAIN_ID = "0x2105";
+
+function erc20TransferData(receiver, units) {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(receiver || "")) throw new Error("Invalid USDC receiver");
+  const amount = BigInt(units);
+  if (amount <= 0n) throw new Error("Invalid USDC amount");
+  return "0xa9059cbb"
+    + receiver.slice(2).toLowerCase().padStart(64, "0")
+    + amount.toString(16).padStart(64, "0");
+}
+
+async function ensureBase(provider) {
+  const current = await provider.request({ method: "eth_chainId" });
+  if (String(current).toLowerCase() === BASE_CHAIN_ID) return;
+
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: BASE_CHAIN_ID }],
+    });
+  } catch (error) {
+    if (error?.code !== 4902) throw error;
+    await provider.request({
+      method: "wallet_addEthereumChain",
+      params: [{
+        chainId: BASE_CHAIN_ID,
+        chainName: "Base",
+        nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+        rpcUrls: ["https://mainnet.base.org"],
+        blockExplorerUrls: ["https://basescan.org"],
+      }],
+    });
+  }
+
+  const after = await provider.request({ method: "eth_chainId" });
+  if (String(after).toLowerCase() !== BASE_CHAIN_ID) {
+    throw new Error("Wallet must be connected to Base");
+  }
+}
+
+async function settleBaseOrder(created) {
+  const wallet = state.wallet;
+  const provider = wallet?.provider;
+  if (!wallet?.address || !provider?.request) throw new Error("Connect a Base wallet first");
+
+  await ensureBase(provider);
+
+  const accounts = await provider.request({ method: "eth_accounts" });
+  const active = Array.isArray(accounts) ? accounts[0] : null;
+  if (!active || active.toLowerCase() !== created.payer.toLowerCase()) {
+    throw new Error("Connected wallet changed. Reconnect and create a new order.");
+  }
+
+  $("page-status").textContent =
+    `Confirm ${created.usdc} USDC in your wallet…`;
+
+  const txId = await provider.request({
+    method: "eth_sendTransaction",
+    params: [{
+      from: active,
+      to: created.token,
+      value: "0x0",
+      data: erc20TransferData(created.receiver, created.units),
+    }],
+  });
+
+  if (!/^0x[0-9a-fA-F]{64}$/.test(txId || "")) {
+    throw new Error("Wallet did not return a valid Base transaction hash");
+  }
+
+  state.receipt = { ...created, tx_id: txId };
+  $("page-status").textContent =
+    "USDC submitted on Base. Waiting for settlement confirmation…";
+
+  let lastError = null;
+  for (let attempt = 0; attempt < 45; attempt++) {
+    try {
+      const credited = await api("/order/credit", {
+        order_id: created.order_id,
+        tx_id: txId,
+      });
+      state.receipt = { ...state.receipt, ...credited };
+      return credited;
+    } catch (error) {
+      lastError = error;
+      const message = String(error?.message || "");
+      if (!/not found|confirmation|successful Base settlement/i.test(message)) throw error;
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  }
+  throw lastError || new Error("Base settlement is still pending. Your transaction was not lost.");
+}
+
 $("finish-preview").addEventListener("click", async () => {
   if (!state.order) { $("review-dialog").close(); return; }
   if (!privySession.authenticated || !privySession.accessToken) {
@@ -342,16 +485,26 @@ $("finish-preview").addEventListener("click", async () => {
       return;
     }
     await api("/domain/enroll", { domain: state.order.domain });
+
     const created = await api("/order/create", {
       domain: state.order.domain,
-      chain: state.order.routeId,
-      bundle: state.order.bundleId,
+      chain: "base",
+      dollars: state.order.dollars ?? Math.round(state.order.stamps * 5 / 100),
       payer: state.wallet.address,
     });
-    state.receipt = created;
-    $("done-stamps").textContent = `${created.bundle_stamps} stamps · ${created.usdc} USDC`;
-    $("done-domain").textContent = `Send USDC to ${created.receiver}`;
+
     $("review-dialog").close();
+
+    const credited = await settleBaseOrder(created);
+
+    $("done-stamps").textContent =
+      `${created.bundle_stamps} stamps · ${created.usdc} USDC paid`;
+    $("done-domain").textContent =
+      `${created.domain} credited · transaction ${state.receipt.tx_id.slice(0, 10)}…`;
+    $("page-status").textContent =
+      `${created.domain} is green-lit · ${credited.stamps} stamps added`;
+
+    await refreshAccount();
     $("done-dialog").showModal();
   } catch (error) {
     showMessage("domain-error", error.message);
@@ -367,7 +520,7 @@ $("download-preview").addEventListener("click", () => {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "midsig-checkout-PREVIEW.json";
+  link.download = `midsig-postage-${state.receipt.order_id || "receipt"}.json`;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1_000);
 });
@@ -383,6 +536,7 @@ for (const dialog of document.querySelectorAll("dialog")) {
   });
 }
 restorePreferences();
+mountBaseDollars();
 render();
 $("page-status").textContent = location.hostname === "mail.aisp.live"
   ? ""
@@ -409,7 +563,7 @@ if (PRIVY_SETTINGS.appId) {
       },
     });
   }).catch(() => {
-    root.textContent = "Privy sign-in is unavailable. You can still preview postage without logging in.";
+    root.textContent = "Privy sign-in is unavailable. Checkout requires a valid sign-in.";
     root.className = "field-help";
     $("browser-wallet-row").hidden = false;
   });

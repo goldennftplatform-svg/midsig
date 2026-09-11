@@ -5,10 +5,11 @@ can require that signature to verify against the From domain's published key.
 Version 1 also supports proof-of-work, which is not a payment or a fixed dollar
 cost. It complements SPF, DKIM, and DMARC; it does not replace them.
 
-The new prepaid-postage checkout is a **no-funds preview**: 20 / 100 / 500 stamps
-for 1 / 5 / 25 USDC, with a Privy integration for Base and Solana wallets. The payment
-verifier, domain-bound credit ledger, and paid SMTP admission are not implemented.
-See [payment status](docs/PAYMENTS.md) and [Privy setup](docs/PRIVY-SETUP.md).
+The paid-postage MVP includes a domain-bound SQLite credit ledger, Base USDC settlement
+verification, Square/card checkout hooks, and paid SMTP admission. Paid admission requires
+recipient/content-bound MIDSIG v2 and charges 0.05 USDC-equivalent credit per envelope
+recipient. Domain enrollment requires a DNS ownership challenge. See `MVP-STATUS.md` for
+the exact security boundary and deployment requirements.
 
 Everything here is MIT. Your keys, your inbox.
 

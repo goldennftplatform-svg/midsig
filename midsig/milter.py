@@ -182,7 +182,7 @@ class MilterSession:
         )
         for name, value in addheaders:
             payload = name.encode("utf-8") + b"\0" + value.encode("utf-8") + b"\0"
-            self._send("m", payload)
+            self._send("h", payload)
         self._send(action)
 
 

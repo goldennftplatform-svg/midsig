@@ -199,13 +199,23 @@ class Ledger:
                 )
         return self.account(domain, user_id)
 
-    def create_order(self, user_id, domain, chain, payer, bundle, now=None):
+    def create_order(self, user_id, domain, chain, payer, bundle=None, now=None, stamps=None):
         now = int(time.time()) if now is None else now
         domain = domain_name(domain)
         payer = payer_address(chain, payer)
-        if bundle not in BUNDLES:
-            raise Rejected("Unknown stamp bundle")
-        stamps = BUNDLES[bundle]
+        if stamps is None:
+            if bundle not in BUNDLES:
+                raise Rejected("Unknown stamp bundle")
+            stamps = BUNDLES[bundle]
+        else:
+            if isinstance(stamps, bool) or not isinstance(stamps, int):
+                raise Rejected("Stamp quantity must be an integer")
+            if stamps < 20:
+                raise Rejected("Base USDC checkout starts at $1")
+            if stamps % 20:
+                raise Rejected("Base USDC checkout uses $1 increments")
+            if stamps > 20000:
+                raise Rejected("Base USDC checkout is limited to $1,000 per order")
         with self.transaction() as db:
             account = db.execute("SELECT * FROM accounts WHERE domain=? AND user_id=?", (domain, user_id)).fetchone()
             if not account:
